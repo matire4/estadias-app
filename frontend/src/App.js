@@ -5,6 +5,8 @@ import "./App.css"
 import "materialize-css/dist/css/materialize.min.css"
 import M from "materialize-css"
 
+const BACKEND_URL = "https://estadias-app.onrender.com"
+
 function App() {
   const [estadias, setEstadias] = useState([])
   const [formData, setFormData] = useState({
@@ -28,7 +30,7 @@ function App() {
   const fetchEstadias = async (filters = {}) => {
     try {
       setLoading(true)
-      let url = "https://estadias-app.onrender.com/estadias"
+      let url = `${BACKEND_URL}/estadias`
 
       const params = new URLSearchParams()
       if (filters.desde) params.append("desde", filters.desde)
@@ -85,8 +87,8 @@ function App() {
     try {
       const method = editingId ? "PUT" : "POST"
       const url = editingId
-        ? `https://estadias-app.onrender.com/estadias/${editingId}`
-        : "https://estadias-app.onrender.com/estadias"
+        ? `${BACKEND_URL}/estadias/${editingId}`
+        : `${BACKEND_URL}/estadias`
 
       const response = await fetch(url, {
         method,
@@ -125,7 +127,7 @@ function App() {
   const handleDelete = async (id) => {
     if (window.confirm("¿Estás seguro de que quieres eliminar esta estadía?")) {
       try {
-        const response = await fetch(`https://estadias-app.onrender.com/estadias/${id}`, {
+        const response = await fetch(`${BACKEND_URL}/estadias/${id}`, {
           method: "DELETE",
         })
 
@@ -172,7 +174,200 @@ function App() {
 
   return (
     <div className="App">
-      {/* Tu interfaz y contenido permanecen igual que antes */}
+      <div className="container">
+        <div className="main-content">
+          <h3 className="center-align title">Gestión de Estadías</h3>
+
+          {/* Formulario Principal */}
+          <div className="form-container">
+            <h5>{editingId ? "Editar Estadía" : "Nueva Estadía"}</h5>
+            <form onSubmit={handleSubmit}>
+              <div className="row">
+                <div className="input-field col s12 m6">
+                  <input
+                    id="departamento"
+                    name="departamento"
+                    type="text"
+                    value={formData.departamento}
+                    onChange={handleInputChange}
+                    required
+                  />
+                  <label htmlFor="departamento" className={formData.departamento ? "active" : ""}>
+                    Departamento
+                  </label>
+                </div>
+                <div className="input-field col s12 m6">
+                  <input
+                    id="inquilino"
+                    name="inquilino"
+                    type="text"
+                    value={formData.inquilino}
+                    onChange={handleInputChange}
+                    required
+                  />
+                  <label htmlFor="inquilino" className={formData.inquilino ? "active" : ""}>
+                    Inquilino
+                  </label>
+                </div>
+              </div>
+              <div className="row">
+                <div className="input-field col s12 m6">
+                  <input
+                    id="fecha_desde"
+                    name="fecha_desde"
+                    type="date"
+                    value={formData.fecha_desde}
+                    onChange={handleInputChange}
+                    required
+                  />
+                  <label htmlFor="fecha_desde" className="active">
+                    Fecha Desde
+                  </label>
+                </div>
+                <div className="input-field col s12 m6">
+                  <input
+                    id="fecha_hasta"
+                    name="fecha_hasta"
+                    type="date"
+                    value={formData.fecha_hasta}
+                    onChange={handleInputChange}
+                    required
+                  />
+                  <label htmlFor="fecha_hasta" className="active">
+                    Fecha Hasta
+                  </label>
+                </div>
+              </div>
+              <div className="row">
+                <div className="col s12 center-align">
+                  <button className="btn primary-btn waves-effect waves-light" type="submit">
+                    {editingId ? "Actualizar" : "Crear"}
+                  </button>
+                  <button
+                    className="btn secondary-btn waves-effect waves-light"
+                    type="button"
+                    onClick={resetForm}
+                    style={{ marginLeft: "10px" }}
+                  >
+                    {editingId ? "Cancelar" : "Limpiar"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          {/* Filtro */}
+          <div className="form-container">
+            <h5>Filtrar por Fecha</h5>
+            <form onSubmit={handleFilter}>
+              <div className="row">
+                <div className="input-field col s12 m6">
+                  <input
+                    id="filter_desde"
+                    name="desde"
+                    type="date"
+                    value={filterData.desde}
+                    onChange={handleFilterChange}
+                  />
+                  <label htmlFor="filter_desde" className="active">
+                    Desde (opcional)
+                  </label>
+                </div>
+                <div className="input-field col s12 m6">
+                  <input
+                    id="filter_hasta"
+                    name="hasta"
+                    type="date"
+                    value={filterData.hasta}
+                    onChange={handleFilterChange}
+                  />
+                  <label htmlFor="filter_hasta" className="active">
+                    Hasta (opcional)
+                  </label>
+                </div>
+              </div>
+              <div className="row">
+                <div className="col s12 center-align">
+                  <button className="btn primary-btn waves-effect waves-light" type="submit">
+                    Buscar por fecha
+                  </button>
+                  <button
+                    className="btn secondary-btn waves-effect waves-light"
+                    type="button"
+                    onClick={clearFilter}
+                    style={{ marginLeft: "10px" }}
+                  >
+                    Limpiar filtro
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          {/* Tabla de estadías */}
+          <div className="table-container">
+            <h5>Estadías Registradas ({estadias.length})</h5>
+            {loading ? (
+              <div className="center-align">
+                <div className="preloader-wrapper active">
+                  <div className="spinner-layer spinner-primary-only">
+                    <div className="circle-clipper left">
+                      <div className="circle"></div>
+                    </div>
+                    <div className="gap-patch">
+                      <div className="circle"></div>
+                    </div>
+                    <div className="circle-clipper right">
+                      <div className="circle"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : estadias.length === 0 ? (
+              <p className="center-align grey-text">No hay estadías registradas</p>
+            ) : (
+              <div className="table-responsive">
+                <table className="striped responsive-table">
+                  <thead>
+                    <tr>
+                      <th>Departamento</th>
+                      <th>Inquilino</th>
+                      <th>Fecha Desde</th>
+                      <th>Fecha Hasta</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {estadias.map((estadia) => (
+                      <tr key={estadia.id}>
+                        <td>{estadia.departamento}</td>
+                        <td>{estadia.inquilino}</td>
+                        <td>{formatDate(estadia.fecha_desde)}</td>
+                        <td>{formatDate(estadia.fecha_hasta)}</td>
+                        <td>
+                          <button
+                            className="btn-small primary-btn waves-effect waves-light"
+                            onClick={() => handleEdit(estadia)}
+                            style={{ marginRight: "5px" }}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="btn-small danger-btn waves-effect waves-light"
+                            onClick={() => handleDelete(estadia.id)}
+                          >
+                            Eliminar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
