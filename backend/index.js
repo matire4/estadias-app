@@ -44,10 +44,10 @@ const initDb = async () => {
 
       -- Monedas
       CREATE TABLE IF NOT EXISTS monedas (
-          id SERIAL PRIMARY KEY,
-          nombre VARCHAR(20) NOT NULL,
-          simbolo VARCHAR(5),
-          cotizacion DECIMAL(12,2) DEFAULT 1
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(20) NOT NULL UNIQUE, -- ahora es único
+        simbolo VARCHAR(5),
+        cotizacion DECIMAL(12,2) DEFAULT 1
       );
 
       -- Estadías
@@ -98,7 +98,7 @@ const initDb = async () => {
 
       INSERT INTO monedas (nombre, simbolo, cotizacion)
       VALUES ('Pesos', '$', 1),
-             ('Dólares', 'USD', 900)
+            ('Dólares', 'USD', 900)
       ON CONFLICT (nombre) DO NOTHING;
     `;
 
