@@ -1,102 +1,117 @@
-// index.js adaptado para Render y corregido el manejo de fechas
+// index.js adaptado a PostgreSQL en Render
 const express = require("express");
-const sqlite3 = require("sqlite3").verbose();
 const cors = require("cors");
+const { Pool } = require("pg");
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
 
-// Conexión a SQLite
-const db = new sqlite3.Database("./estadias.db", (err) => {
-  if (err) console.error(err.message);
-  else console.log("Conectado a la base de datos SQLite");
+// Conexión a PostgreSQL
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // necesario para Render
 });
 
-// Crear tabla si no existe
-const crearTabla = `
-  CREATE TABLE IF NOT EXISTS estadias (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    departamento TEXT NOT NULL,
-    inquilino TEXT NOT NULL,
-    fecha_desde TEXT NOT NULL,
-    fecha_hasta TEXT NOT NULL
-  )
-`;
-db.run(crearTabla);
-
-// Helper para formato ISO (evitar +1 en frontend)
+// Helper para formato ISO (para frontend React)
 const formatDateISO = (fecha) => {
+  if (!fecha) return null;
   const date = new Date(fecha);
   return date.toISOString().split("T")[0];
 };
 
-// Obtener estadías con filtro robusto
-app.get("/estadias", (req, res) => {
-  const { desde, hasta } = req.query;
-  let query = "SELECT * FROM estadias";
-  const params = [];
+// ========================
+// RUTAS ESTADÍAS
+// ========================
 
-  if (desde && hasta) {
-    query += " WHERE fecha_desde <= ? AND fecha_hasta >= ?";
-    params.push(hasta, desde);
-  }
+// Obtener estadías (con filtro opcional de fechas)
+app.get("/estadias", async (req, res) => {
+  try {
+    const { desde, hasta } = req.query;
+    let query = "SELECT * FROM estadias ORDER BY id ASC";
+    const params = [];
 
-  db.all(query, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (desde && hasta) {
+      query = "SELECT * FROM estadias WHERE fecha_desde <= $1 AND fecha_hasta >= $2 ORDER BY id ASC";
+      params.push(hasta, desde);
+    }
 
-    const formateadas = rows.map((row) => ({
+    const result = await pool.query(query, params);
+    const formateadas = result.rows.map((row) => ({
       ...row,
       fecha_desde: formatDateISO(row.fecha_desde),
       fecha_hasta: formatDateISO(row.fecha_hasta),
     }));
 
     res.json(formateadas);
-  });
+  } catch (err) {
+    console.error("Error en GET /estadias:", err.message);
+    res.status(500).json({ error: "Error al obtener estadías" });
+  }
 });
 
 // Crear estadía
-app.post("/estadias", (req, res) => {
-  const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
-  const sql =
-    "INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta) VALUES (?, ?, ?, ?)";
-  db.run(
-    sql,
-    [departamento, inquilino, fecha_desde, fecha_hasta],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.status(201).json({ id: this.lastID });
-    }
-  );
+app.post("/estadias", async (req, res) => {
+  try {
+    const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
+    const sql = `
+      INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta)
+      VALUES ($1, $2, $3, $4) RETURNING *`;
+    const result = await pool.query(sql, [
+      departamento,
+      inquilino,
+      fecha_desde,
+      fecha_hasta,
+    ]);
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error("Error en POST /estadias:", err.message);
+    res.status(500).json({ error: "Error al crear estadía" });
+  }
 });
 
 // Actualizar estadía
-app.put("/estadias/:id", (req, res) => {
-  const { id } = req.params;
-  const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
-  const sql =
-    "UPDATE estadias SET departamento = ?, inquilino = ?, fecha_desde = ?, fecha_hasta = ? WHERE id = ?";
-  db.run(
-    sql,
-    [departamento, inquilino, fecha_desde, fecha_hasta, id],
-    function (err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.json({ updated: this.changes });
-    }
-  );
+app.put("/estadias/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
+
+    const sql = `
+      UPDATE estadias
+      SET departamento = $1, inquilino = $2, fecha_desde = $3, fecha_hasta = $4
+      WHERE id = $5 RETURNING *`;
+    const result = await pool.query(sql, [
+      departamento,
+      inquilino,
+      fecha_desde,
+      fecha_hasta,
+      id,
+    ]);
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("Error en PUT /estadias:", err.message);
+    res.status(500).json({ error: "Error al actualizar estadía" });
+  }
 });
 
 // Eliminar estadía
-app.delete("/estadias/:id", (req, res) => {
-  const { id } = req.params;
-  db.run("DELETE FROM estadias WHERE id = ?", [id], function (err) {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ deleted: this.changes });
-  });
+app.delete("/estadias/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query("DELETE FROM estadias WHERE id = $1", [id]);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error("Error en DELETE /estadias:", err.message);
+    res.status(500).json({ error: "Error al eliminar estadía" });
+  }
 });
 
-// Iniciar servidor
+// ========================
+// INICIAR SERVIDOR
+// ========================
 app.listen(PORT, () => {
   console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
 });

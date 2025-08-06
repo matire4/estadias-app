@@ -6,12 +6,18 @@
   "scripts": {
     "start": "node index.js"
   },
-  "keywords": ["express", "sqlite", "backend", "estadias"],
+  "keywords": [
+    "express",
+    "sqlite",
+    "backend",
+    "estadias"
+  ],
   "author": "Matías",
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "pg": "^8.16.3",
     "sqlite3": "^5.1.7"
   }
 }

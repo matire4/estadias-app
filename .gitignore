@@ -1,0 +1,29 @@
+# Node modules
+**/node_modules/
+**/dist/
+
+# Builds
+build/
+*.log
+
+# Environment files
+.env
+.env.local
+
+# SQLite DB file
+*.db
+*.sqlite
+
+# IDE / Sistema operativo
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel
+.vercel/
