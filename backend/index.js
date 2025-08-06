@@ -15,7 +15,105 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }, // necesario para Render
 });
 
-// Helper para formato ISO (para frontend React)
+// ========================
+// CREACIÓN AUTOMÁTICA DE TABLAS
+// ========================
+const initDb = async () => {
+  try {
+    const script = `
+      -- Usuarios
+      CREATE TABLE IF NOT EXISTS usuarios (
+          id SERIAL PRIMARY KEY,
+          nombre VARCHAR(100) NOT NULL,
+          email VARCHAR(100) UNIQUE NOT NULL,
+          clave VARCHAR(255) NOT NULL,
+          rol VARCHAR(20) NOT NULL DEFAULT 'operador'
+      );
+
+      -- Estados
+      CREATE TABLE IF NOT EXISTS estados (
+          id VARCHAR(10) PRIMARY KEY,
+          nombre VARCHAR(50) NOT NULL
+      );
+
+      -- Tipos de movimientos
+      CREATE TABLE IF NOT EXISTS tipos (
+          id VARCHAR(10) PRIMARY KEY,
+          nombre VARCHAR(50) NOT NULL
+      );
+
+      -- Monedas
+      CREATE TABLE IF NOT EXISTS monedas (
+          id SERIAL PRIMARY KEY,
+          nombre VARCHAR(20) NOT NULL,
+          simbolo VARCHAR(5),
+          cotizacion DECIMAL(12,2) DEFAULT 1
+      );
+
+      -- Estadías
+      CREATE TABLE IF NOT EXISTS estadias (
+          id SERIAL PRIMARY KEY,
+          departamento VARCHAR(50) NOT NULL,
+          inquilino VARCHAR(100) NOT NULL,
+          fecha_desde DATE NOT NULL,
+          fecha_hasta DATE NOT NULL,
+          estado_id VARCHAR(10) REFERENCES estados(id),
+          usuario_id INT REFERENCES usuarios(id)
+      );
+
+      -- Movimientos
+      CREATE TABLE IF NOT EXISTS movimientos (
+          id SERIAL PRIMARY KEY,
+          cod_estadia INT REFERENCES estadias(id) ON DELETE CASCADE,
+          cod_tipo VARCHAR(10) REFERENCES tipos(id),
+          cod_moneda INT REFERENCES monedas(id),
+          importe DECIMAL(12,2) NOT NULL,
+          cotizacion DECIMAL(12,2) NOT NULL DEFAULT 1,
+          concepto TEXT,
+          fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+          usuario_id INT REFERENCES usuarios(id)
+      );
+
+      -- Observaciones
+      CREATE TABLE IF NOT EXISTS observaciones (
+          id SERIAL PRIMARY KEY,
+          cod_estadia INT REFERENCES estadias(id) ON DELETE CASCADE,
+          comentario TEXT NOT NULL,
+          fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+          usuario_id INT REFERENCES usuarios(id)
+      );
+
+      -- Datos iniciales
+      INSERT INTO estados (id, nombre)
+      VALUES ('Act', 'Activo'), ('Cerr', 'Cerrado')
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO tipos (id, nombre)
+      VALUES ('Inqu', 'Inquilino'),
+             ('Prop', 'Propietario'),
+             ('Publ', 'Publicidad'),
+             ('Limp', 'Recepcion/Limpieza'),
+             ('Comi', 'Comisión')
+      ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO monedas (nombre, simbolo, cotizacion)
+      VALUES ('Pesos', '$', 1),
+             ('Dólares', 'USD', 900)
+      ON CONFLICT (nombre) DO NOTHING;
+    `;
+
+    await pool.query(script);
+    console.log("✅ Tablas verificadas/creadas en PostgreSQL");
+  } catch (err) {
+    console.error("❌ Error creando tablas:", err.message);
+  }
+};
+
+initDb();
+
+// ========================
+// Helper para fechas
+// ========================
 const formatDateISO = (fecha) => {
   if (!fecha) return null;
   const date = new Date(fecha);
@@ -25,8 +123,6 @@ const formatDateISO = (fecha) => {
 // ========================
 // RUTAS ESTADÍAS
 // ========================
-
-// Obtener estadías (con filtro opcional de fechas)
 app.get("/estadias", async (req, res) => {
   try {
     const { desde, hasta } = req.query;
@@ -57,8 +153,8 @@ app.post("/estadias", async (req, res) => {
   try {
     const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
     const sql = `
-      INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta)
-      VALUES ($1, $2, $3, $4) RETURNING *`;
+      INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta, estado_id)
+      VALUES ($1, $2, $3, $4, 'Act') RETURNING *`;
     const result = await pool.query(sql, [
       departamento,
       inquilino,
