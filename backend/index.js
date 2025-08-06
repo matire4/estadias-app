@@ -1,4 +1,4 @@
-// index.js adaptado a PostgreSQL en Render
+// index.js completo adaptado con nuevos endpoints y estructura extendida
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
@@ -12,7 +12,7 @@ app.use(express.json());
 // Conexión a PostgreSQL
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }, // necesario para Render
+  ssl: { rejectUnauthorized: false },
 });
 
 // ========================
@@ -21,84 +21,97 @@ const pool = new Pool({
 const initDb = async () => {
   try {
     const script = `
-      -- Usuarios
       CREATE TABLE IF NOT EXISTS usuarios (
-          id SERIAL PRIMARY KEY,
-          nombre VARCHAR(100) NOT NULL,
-          email VARCHAR(100) UNIQUE NOT NULL,
-          clave VARCHAR(255) NOT NULL,
-          rol VARCHAR(20) NOT NULL DEFAULT 'operador'
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        clave VARCHAR(255) NOT NULL,
+        rol VARCHAR(20) NOT NULL DEFAULT 'operador'
       );
 
-      -- Estados
       CREATE TABLE IF NOT EXISTS estados (
-          id VARCHAR(10) PRIMARY KEY,
-          nombre VARCHAR(50) NOT NULL
+        id VARCHAR(10) PRIMARY KEY,
+        nombre VARCHAR(50) NOT NULL
       );
 
-      -- Tipos de movimientos
       CREATE TABLE IF NOT EXISTS tipos (
-          id VARCHAR(10) PRIMARY KEY,
-          nombre VARCHAR(50) NOT NULL
+        id VARCHAR(10) PRIMARY KEY,
+        nombre VARCHAR(50) NOT NULL
       );
 
-      -- Monedas
       CREATE TABLE IF NOT EXISTS monedas (
         id SERIAL PRIMARY KEY,
-        nombre VARCHAR(20) NOT NULL UNIQUE, -- ahora es único
+        nombre VARCHAR(20) NOT NULL UNIQUE,
         simbolo VARCHAR(5),
         cotizacion DECIMAL(12,2) DEFAULT 1
       );
 
-      -- Estadías
+      CREATE TABLE IF NOT EXISTS propietarios (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        dni_cuit VARCHAR(20) UNIQUE,
+        telefono VARCHAR(30)
+      );
+
+      CREATE TABLE IF NOT EXISTS departamentos (
+        id SERIAL PRIMARY KEY,
+        nro VARCHAR(20) NOT NULL,
+        id_propietario INT REFERENCES propietarios(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS cocheras (
+        id SERIAL PRIMARY KEY,
+        id_propietario INT REFERENCES propietarios(id)
+      );
+
       CREATE TABLE IF NOT EXISTS estadias (
-          id SERIAL PRIMARY KEY,
-          departamento VARCHAR(50) NOT NULL,
-          inquilino VARCHAR(100) NOT NULL,
-          fecha_desde DATE NOT NULL,
-          fecha_hasta DATE NOT NULL,
-          estado_id VARCHAR(10) REFERENCES estados(id),
-          usuario_id INT REFERENCES usuarios(id)
+        id SERIAL PRIMARY KEY,
+        departamento VARCHAR(50) NOT NULL,
+        inquilino VARCHAR(100) NOT NULL,
+        fecha_desde DATE NOT NULL,
+        fecha_hasta DATE NOT NULL,
+        estado_id VARCHAR(10) REFERENCES estados(id),
+        usuario_id INT REFERENCES usuarios(id),
+        cod_moneda INT REFERENCES monedas(id),
+        cotizacion DECIMAL(12,2),
+        importe_total DECIMAL(12,2),
+        concepto TEXT,
+        id_cochera INT REFERENCES cocheras(id)
       );
 
-      -- Movimientos
       CREATE TABLE IF NOT EXISTS movimientos (
-          id SERIAL PRIMARY KEY,
-          cod_estadia INT REFERENCES estadias(id) ON DELETE CASCADE,
-          cod_tipo VARCHAR(10) REFERENCES tipos(id),
-          cod_moneda INT REFERENCES monedas(id),
-          importe DECIMAL(12,2) NOT NULL,
-          cotizacion DECIMAL(12,2) NOT NULL DEFAULT 1,
-          concepto TEXT,
-          fecha DATE NOT NULL DEFAULT CURRENT_DATE,
-          usuario_id INT REFERENCES usuarios(id)
+        id SERIAL PRIMARY KEY,
+        cod_estadia INT REFERENCES estadias(id) ON DELETE CASCADE,
+        cod_tipo VARCHAR(10) REFERENCES tipos(id),
+        cod_moneda INT REFERENCES monedas(id),
+        importe DECIMAL(12,2) NOT NULL,
+        cotizacion DECIMAL(12,2) NOT NULL DEFAULT 1,
+        concepto TEXT,
+        fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+        usuario_id INT REFERENCES usuarios(id)
       );
 
-      -- Observaciones
       CREATE TABLE IF NOT EXISTS observaciones (
-          id SERIAL PRIMARY KEY,
-          cod_estadia INT REFERENCES estadias(id) ON DELETE CASCADE,
-          comentario TEXT NOT NULL,
-          fecha DATE NOT NULL DEFAULT CURRENT_DATE,
-          usuario_id INT REFERENCES usuarios(id)
+        id SERIAL PRIMARY KEY,
+        cod_estadia INT REFERENCES estadias(id) ON DELETE CASCADE,
+        comentario TEXT NOT NULL,
+        fecha DATE NOT NULL DEFAULT CURRENT_DATE,
+        usuario_id INT REFERENCES usuarios(id)
       );
 
-      -- Datos iniciales
-      INSERT INTO estados (id, nombre)
-      VALUES ('Act', 'Activo'), ('Cerr', 'Cerrado')
+      INSERT INTO estados (id, nombre) VALUES ('Act', 'Activo'), ('Cerr', 'Cerrado') ON CONFLICT (id) DO NOTHING;
+
+      INSERT INTO tipos (id, nombre) VALUES
+        ('Inqu', 'Inquilino'),
+        ('Prop', 'Propietario'),
+        ('Publ', 'Publicidad'),
+        ('Limp', 'Recepcion/Limpieza'),
+        ('Comi', 'Comisión')
       ON CONFLICT (id) DO NOTHING;
 
-      INSERT INTO tipos (id, nombre)
-      VALUES ('Inqu', 'Inquilino'),
-             ('Prop', 'Propietario'),
-             ('Publ', 'Publicidad'),
-             ('Limp', 'Recepcion/Limpieza'),
-             ('Comi', 'Comisión')
-      ON CONFLICT (id) DO NOTHING;
-
-      INSERT INTO monedas (nombre, simbolo, cotizacion)
-      VALUES ('Pesos', '$', 1),
-            ('Dólares', 'USD', 900)
+      INSERT INTO monedas (nombre, simbolo, cotizacion) VALUES
+        ('Pesos', '$', 1),
+        ('Dólares', 'USD', 900)
       ON CONFLICT (nombre) DO NOTHING;
     `;
 
@@ -111,9 +124,6 @@ const initDb = async () => {
 
 initDb();
 
-// ========================
-// Helper para fechas
-// ========================
 const formatDateISO = (fecha) => {
   if (!fecha) return null;
   const date = new Date(fecha);
@@ -121,26 +131,23 @@ const formatDateISO = (fecha) => {
 };
 
 // ========================
-// RUTAS ESTADÍAS
+// ENDPOINTS DE ESTADIAS
 // ========================
 app.get("/estadias", async (req, res) => {
   try {
     const { desde, hasta } = req.query;
     let query = "SELECT * FROM estadias ORDER BY id ASC";
     const params = [];
-
     if (desde && hasta) {
       query = "SELECT * FROM estadias WHERE fecha_desde <= $1 AND fecha_hasta >= $2 ORDER BY id ASC";
       params.push(hasta, desde);
     }
-
     const result = await pool.query(query, params);
     const formateadas = result.rows.map((row) => ({
       ...row,
       fecha_desde: formatDateISO(row.fecha_desde),
       fecha_hasta: formatDateISO(row.fecha_hasta),
     }));
-
     res.json(formateadas);
   } catch (err) {
     console.error("Error en GET /estadias:", err.message);
@@ -148,19 +155,36 @@ app.get("/estadias", async (req, res) => {
   }
 });
 
-// Crear estadía
 app.post("/estadias", async (req, res) => {
   try {
-    const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
+    const {
+      departamento,
+      inquilino,
+      fecha_desde,
+      fecha_hasta,
+      cod_moneda,
+      cotizacion,
+      importe_total,
+      concepto,
+      id_cochera
+    } = req.body;
+
     const sql = `
-      INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta, estado_id)
-      VALUES ($1, $2, $3, $4, 'Act') RETURNING *`;
+      INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta, estado_id, cod_moneda, cotizacion, importe_total, concepto, id_cochera)
+      VALUES ($1, $2, $3, $4, 'Act', $5, $6, $7, $8, $9) RETURNING *`;
+
     const result = await pool.query(sql, [
       departamento,
       inquilino,
       fecha_desde,
       fecha_hasta,
+      cod_moneda,
+      cotizacion,
+      importe_total,
+      concepto,
+      id_cochera
     ]);
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error("Error en POST /estadias:", err.message);
@@ -168,22 +192,45 @@ app.post("/estadias", async (req, res) => {
   }
 });
 
-// Actualizar estadía
 app.put("/estadias/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { departamento, inquilino, fecha_desde, fecha_hasta } = req.body;
+    const {
+      departamento,
+      inquilino,
+      fecha_desde,
+      fecha_hasta,
+      cod_moneda,
+      cotizacion,
+      importe_total,
+      concepto,
+      id_cochera
+    } = req.body;
 
     const sql = `
-      UPDATE estadias
-      SET departamento = $1, inquilino = $2, fecha_desde = $3, fecha_hasta = $4
-      WHERE id = $5 RETURNING *`;
+      UPDATE estadias SET
+        departamento = $1,
+        inquilino = $2,
+        fecha_desde = $3,
+        fecha_hasta = $4,
+        cod_moneda = $5,
+        cotizacion = $6,
+        importe_total = $7,
+        concepto = $8,
+        id_cochera = $9
+      WHERE id = $10 RETURNING *`;
+
     const result = await pool.query(sql, [
       departamento,
       inquilino,
       fecha_desde,
       fecha_hasta,
-      id,
+      cod_moneda,
+      cotizacion,
+      importe_total,
+      concepto,
+      id_cochera,
+      id
     ]);
 
     res.json(result.rows[0]);
@@ -193,7 +240,6 @@ app.put("/estadias/:id", async (req, res) => {
   }
 });
 
-// Eliminar estadía
 app.delete("/estadias/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -202,6 +248,25 @@ app.delete("/estadias/:id", async (req, res) => {
   } catch (err) {
     console.error("Error en DELETE /estadias:", err.message);
     res.status(500).json({ error: "Error al eliminar estadía" });
+  }
+});
+
+// ========================
+// ENDPOINTS DE APOYO
+// ========================
+
+// Obtener departamentos con propietario
+app.get("/departamentos", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT d.id, d.nro, p.nombre AS propietario
+      FROM departamentos d
+      LEFT JOIN propietarios p ON d.id_propietario = p.id
+      ORDER BY d.id ASC`);
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error en GET /departamentos:", err.message);
+    res.status(500).json({ error: "Error al obtener departamentos" });
   }
 });
 
