@@ -21,7 +21,7 @@ export default function Calendar() {
   const [estadias, setEstadias] = useState<Estadia[]>([])
   const [loading, setLoading] = useState(false)
   const [showFilter, setShowFilter] = useState(false)
-  const [filterData, setFilterData] = useState({
+  const [filterData, setFilterData] = useState<{ desde?: string; hasta?: string }>({
     desde: '',
     hasta: ''
   })
