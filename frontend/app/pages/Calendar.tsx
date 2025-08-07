@@ -33,7 +33,7 @@ export default function Calendar() {
     fetchEstadias()
   }, [])
 
-  const fetchEstadias = async (filters = {}) => {
+  const fetchEstadias = async (filters: { desde?: string; hasta?: string } = {}) => {
     try {
       setLoading(true)
       let url = `${BACKEND_URL}/estadias`
