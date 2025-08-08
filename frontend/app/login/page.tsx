@@ -1,6 +1,6 @@
 "use client"
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '../context/AuthContext'
 import { Eye, EyeOff, User, Mail, Lock } from 'lucide-react'
 
@@ -17,7 +17,7 @@ export default function Login() {
   const [error, setError] = useState('')
 
   const { login, register, user } = useAuth()
-  const navigate = useNavigate()
+  const router = useRouter()  // ✅ reemplaza useNavigate
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target
@@ -34,7 +34,7 @@ export default function Login() {
       if (isLogin) {
         const success = await login(formData.email, formData.password)
         if (success) {
-          navigate('/calendar')
+          router.push('/calendar') // ✅
         } else {
           setError('Credenciales incorrectas')
         }
@@ -46,7 +46,7 @@ export default function Login() {
           password: formData.password
         })
         if (success) {
-          navigate('/calendar')
+          router.push('/calendar') // ✅
         } else {
           setError('El usuario ya existe')
         }
