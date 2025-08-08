@@ -17,6 +17,7 @@ interface Props {
 
 export default function EstadiaForm({ editingId }: Props) {
   const router = useRouter();
+  console.log("✅ API_URL:", process.env.NEXT_PUBLIC_API_URL);
   const [formData, setFormData] = useState<Estadia>({
     departamento: '',
     inquilino: '',
