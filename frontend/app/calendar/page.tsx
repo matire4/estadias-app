@@ -1,6 +1,7 @@
-"use client"
+'use client'
+
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '../context/AuthContext'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -15,19 +16,19 @@ interface Estadia {
   fecha_hasta: string
 }
 
-const BACKEND_URL = "https://estadias-app.onrender.com"
+const BACKEND_URL = 'https://estadias-app.onrender.com'
 
-export default function Calendar() {
+export default function CalendarPage() {
   const [estadias, setEstadias] = useState<Estadia[]>([])
   const [loading, setLoading] = useState(false)
   const [showFilter, setShowFilter] = useState(false)
   const [filterData, setFilterData] = useState<{ desde?: string; hasta?: string }>({
     desde: '',
-    hasta: ''
+    hasta: '',
   })
 
   const { user, logout } = useAuth()
-  const navigate = useNavigate()
+  const router = useRouter()
 
   useEffect(() => {
     fetchEstadias()
@@ -38,10 +39,10 @@ export default function Calendar() {
       setLoading(true)
       let url = `${BACKEND_URL}/estadias`
       const params = new URLSearchParams()
-      
+
       if (filters.desde) params.append('desde', filters.desde)
       if (filters.hasta) params.append('hasta', filters.hasta)
-      
+
       if (params.toString()) {
         url += `?${params.toString()}`
       }
@@ -62,12 +63,12 @@ export default function Calendar() {
 
   const handleEventClick = (clickInfo: any) => {
     const estadiaId = clickInfo.event.id
-    navigate(`/estadia/edit/${estadiaId}`)
+    router.push(`/estadia/edit/${estadiaId}`)
   }
 
   const handleLogout = () => {
     logout()
-    navigate('/login')
+    router.push('/login')
   }
 
   const handleFilter = (e: React.FormEvent) => {
@@ -88,7 +89,7 @@ export default function Calendar() {
     start: estadia.fecha_desde,
     end: estadia.fecha_hasta,
     backgroundColor: '#3b82f6',
-    borderColor: '#2563eb'
+    borderColor: '#2563eb',
   }))
 
   return (
@@ -135,7 +136,7 @@ export default function Calendar() {
                   name="desde"
                   type="date"
                   value={filterData.desde}
-                  onChange={(e) => setFilterData(prev => ({ ...prev, desde: e.target.value }))}
+                  onChange={e => setFilterData(prev => ({ ...prev, desde: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -148,7 +149,7 @@ export default function Calendar() {
                   name="hasta"
                   type="date"
                   value={filterData.hasta}
-                  onChange={(e) => setFilterData(prev => ({ ...prev, hasta: e.target.value }))}
+                  onChange={e => setFilterData(prev => ({ ...prev, hasta: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -197,12 +198,12 @@ export default function Calendar() {
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
-                right: 'dayGridMonth,dayGridWeek'
+                right: 'dayGridMonth,dayGridWeek',
               }}
               buttonText={{
                 today: 'Hoy',
                 month: 'Mes',
-                week: 'Semana'
+                week: 'Semana',
               }}
               eventDisplay="block"
               dayMaxEvents={3}
@@ -214,7 +215,7 @@ export default function Calendar() {
 
       {/* Floating Action Button */}
       <button
-        onClick={() => navigate('/estadia/new')}
+        onClick={() => router.push('/estadia/new')}
         className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
       >
         <Plus className="w-6 h-6" />

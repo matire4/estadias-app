@@ -16,11 +16,12 @@ const pool = new Pool({
 });
 
 // ========================
-// CREACIÓN AUTOMÁTICA DE TABLAS
+// CREACION DE TABLAS Y COLUMNAS (ALTER IF NOT EXISTS)
 // ========================
 const initDb = async () => {
   try {
-    const script = `
+    // Tablas base (sin columnas nuevas)
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS usuarios (
         id SERIAL PRIMARY KEY,
         nombre VARCHAR(100) NOT NULL,
@@ -69,14 +70,7 @@ const initDb = async () => {
         departamento VARCHAR(50) NOT NULL,
         inquilino VARCHAR(100) NOT NULL,
         fecha_desde DATE NOT NULL,
-        fecha_hasta DATE NOT NULL,
-        estado_id VARCHAR(10) REFERENCES estados(id),
-        usuario_id INT REFERENCES usuarios(id),
-        cod_moneda INT REFERENCES monedas(id),
-        cotizacion DECIMAL(12,2),
-        importe_total DECIMAL(12,2),
-        concepto TEXT,
-        id_cochera INT REFERENCES cocheras(id)
+        fecha_hasta DATE NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS movimientos (
@@ -99,7 +93,8 @@ const initDb = async () => {
         usuario_id INT REFERENCES usuarios(id)
       );
 
-      INSERT INTO estados (id, nombre) VALUES ('Act', 'Activo'), ('Cerr', 'Cerrado') ON CONFLICT (id) DO NOTHING;
+      INSERT INTO estados (id, nombre) VALUES ('Act', 'Activo'), ('Cerr', 'Cerrado')
+        ON CONFLICT (id) DO NOTHING;
 
       INSERT INTO tipos (id, nombre) VALUES
         ('Inqu', 'Inquilino'),
@@ -113,12 +108,38 @@ const initDb = async () => {
         ('Pesos', '$', 1),
         ('Dólares', 'USD', 900)
       ON CONFLICT (nombre) DO NOTHING;
-    `;
+    `);
 
-    await pool.query(script);
-    console.log("✅ Tablas verificadas/creadas en PostgreSQL");
+    // Agregar columnas a estadias si no existen
+    await pool.query(`DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='estado_id') THEN
+        ALTER TABLE estadias ADD COLUMN estado_id VARCHAR(10);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='usuario_id') THEN
+        ALTER TABLE estadias ADD COLUMN usuario_id INT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='cod_moneda') THEN
+        ALTER TABLE estadias ADD COLUMN cod_moneda INT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='cotizacion') THEN
+        ALTER TABLE estadias ADD COLUMN cotizacion DECIMAL(12,2);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='importe_total') THEN
+        ALTER TABLE estadias ADD COLUMN importe_total DECIMAL(12,2);
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='concepto') THEN
+        ALTER TABLE estadias ADD COLUMN concepto TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='estadias' AND column_name='id_cochera') THEN
+        ALTER TABLE estadias ADD COLUMN id_cochera INT;
+      END IF;
+    END $$;
+    `);
+
+    console.log("✅ Tablas verificadas/actualizadas en PostgreSQL");
   } catch (err) {
-    console.error("❌ Error creando tablas:", err.message);
+    console.error("❌ Error en initDb:", err.message);
   }
 };
 
