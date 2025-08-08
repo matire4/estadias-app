@@ -1,15 +1,13 @@
-const config: Config = {
-  content: [
-    './app/**/*.{ts,tsx}',  // <-- importante para Next 13+
-    './pages/**/*.{ts,tsx}', // si usás carpeta pages
-    './components/**/*.{ts,tsx}',
-  ],
-  theme: {
-    extend: {
-      // si querés, podés extender colores o fuentes acá
+const config = {
+    content: [
+      './app/**/*.{ts,tsx}',      // Soporta rutas app/
+      './pages/**/*.{ts,tsx}',    // Soporta rutas legacy si usás
+      './components/**/*.{ts,tsx,js,jsx}', // Componentes si los tenés
+    ],
+    theme: {
+      extend: {},
     },
-  },
-  plugins: [],
-}
-
-export default config
+    plugins: [],
+  }
+  
+  export default config
