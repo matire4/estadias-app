@@ -4,7 +4,9 @@
   "description": "Backend API para la gestión de estadías con SQLite y Express",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon --watch src --watch index.js index.js",
+    "seed:render": "node scripts/seed_users.js"
   },
   "keywords": [
     "express",
@@ -15,9 +17,15 @@
   "author": "Matías",
   "license": "ISC",
   "dependencies": {
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
     "pg": "^8.16.3",
     "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }
