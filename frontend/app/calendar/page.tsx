@@ -1,96 +1,86 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuth } from '../context/AuthContext'
-import FullCalendar from '@fullcalendar/react'
-import dayGridPlugin from '@fullcalendar/daygrid'
-import interactionPlugin from '@fullcalendar/interaction'
-import { Plus, LogOut, Filter, X } from 'lucide-react'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import { Plus, LogOut, Filter, X } from 'lucide-react';
+
+import { useMe } from '@/hooks/useMe';           // <-- NUEVO: leemos usuario del JWT
+import { api } from '@/lib/api';                 // <-- NUEVO: cliente con manejo de 401
 
 interface Estadia {
-  id: string
-  departamento: string
-  inquilino: string
-  fecha_desde: string
-  fecha_hasta: string
+  id: number;                                    // el backend devuelve int; si fuera string, cambiá a string
+  departamento: string;
+  inquilino: string;
+  fecha_desde: string;
+  fecha_hasta: string;
 }
 
-const BACKEND_URL = 'https://estadias-app.onrender.com'
-
 export default function CalendarPage() {
-  const [estadias, setEstadias] = useState<Estadia[]>([])
-  const [loading, setLoading] = useState(false)
-  const [showFilter, setShowFilter] = useState(false)
+  const [estadias, setEstadias] = useState<Estadia[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
   const [filterData, setFilterData] = useState<{ desde?: string; hasta?: string }>({
     desde: '',
     hasta: '',
-  })
+  });
 
-  const { user, logout } = useAuth()
-  const router = useRouter()
+  const { me, logout } = useMe();                // <-- NUEVO
+  const router = useRouter();
 
   useEffect(() => {
-    fetchEstadias()
-  }, [])
+    fetchEstadias();
+  }, []);
 
   const fetchEstadias = async (filters: { desde?: string; hasta?: string } = {}) => {
     try {
-      setLoading(true)
-      let url = `${BACKEND_URL}/estadias`
-      const params = new URLSearchParams()
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (filters.desde) params.append('desde', filters.desde);
+      if (filters.hasta) params.append('hasta', filters.hasta);
+      const path = `/estadias${params.toString() ? `?${params.toString()}` : ''}`;
 
-      if (filters.desde) params.append('desde', filters.desde)
-      if (filters.hasta) params.append('hasta', filters.hasta)
-
-      if (params.toString()) {
-        url += `?${params.toString()}`
-      }
-
-      const response = await fetch(url)
-      if (response.ok) {
-        const data = await response.json()
-        setEstadias(data)
-      } else {
-        console.error('Error al cargar las estadías')
-      }
+      // Usamos api.get para beneficiarnos del manejo de 401 automático
+      const data = await api.get<Estadia[]>(path);
+      setEstadias(data);
     } catch (error) {
-      console.error('Error:', error)
+      console.error('Error al cargar las estadías', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleEventClick = (clickInfo: any) => {
-    const estadiaId = clickInfo.event.id
-    router.push(`/estadia/edit/${estadiaId}`)
-  }
+    const estadiaId = clickInfo.event.id;
+    router.push(`/estadia/edit/${estadiaId}`);
+  };
 
   const handleLogout = () => {
-    logout()
-    router.push('/login')
-  }
+    logout();                                    // borra cookie y navega a /login
+  };
 
   const handleFilter = (e: React.FormEvent) => {
-    e.preventDefault()
-    fetchEstadias(filterData)
-    setShowFilter(false)
-  }
+    e.preventDefault();
+    fetchEstadias(filterData);
+    setShowFilter(false);
+  };
 
   const clearFilter = () => {
-    setFilterData({ desde: '', hasta: '' })
-    fetchEstadias()
-    setShowFilter(false)
-  }
+    setFilterData({ desde: '', hasta: '' });
+    fetchEstadias();
+    setShowFilter(false);
+  };
 
-  const calendarEvents = estadias.map(estadia => ({
-    id: estadia.id,
+  const calendarEvents = estadias.map((estadia) => ({
+    id: String(estadia.id),                      // FullCalendar espera string
     title: `${estadia.departamento} - ${estadia.inquilino}`,
     start: estadia.fecha_desde,
     end: estadia.fecha_hasta,
     backgroundColor: '#3b82f6',
     borderColor: '#2563eb',
-  }))
+  }));
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,7 +89,8 @@ export default function CalendarPage() {
           <div className="flex justify-between items-center h-16">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Gestión de Estadías</h1>
-              <p className="text-sm text-gray-600">Bienvenido, {user?.name}</p>
+              {/* Mostrar nombre desde el JWT (me?.nombre). Fallback al email si no hay nombre */}
+              <p className="text-sm text-gray-600">Bienvenido, {me?.nombre || me?.email || '—'}</p>
             </div>
             <div className="flex items-center space-x-4">
               <button
@@ -134,7 +125,7 @@ export default function CalendarPage() {
                   name="desde"
                   type="date"
                   value={filterData.desde}
-                  onChange={e => setFilterData(prev => ({ ...prev, desde: e.target.value }))}
+                  onChange={(e) => setFilterData((prev) => ({ ...prev, desde: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -147,7 +138,7 @@ export default function CalendarPage() {
                   name="hasta"
                   type="date"
                   value={filterData.hasta}
-                  onChange={e => setFilterData(prev => ({ ...prev, hasta: e.target.value }))}
+                  onChange={(e) => setFilterData((prev) => ({ ...prev, hasta: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>
@@ -217,5 +208,5 @@ export default function CalendarPage() {
         <Plus className="w-6 h-6" />
       </button>
     </div>
-  )
+  );
 }

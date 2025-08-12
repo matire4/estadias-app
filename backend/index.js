@@ -357,6 +357,113 @@ app.delete("/users/:id", authMiddleware, requireAuth, requireRole("programador")
 });
 
 // ========================
+// CATALOGOS (cualquier rol logueado): propietarios, departamentos, estados, tipos
+// ========================
+
+// --- PROPIETARIOS ---
+app.get("/propietarios", authMiddleware, requireAuth, async (_req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, nombre, dni_cuit, telefono FROM propietarios ORDER BY nombre ASC"
+    );
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: "Error listando propietarios" });
+  }
+});
+
+app.post("/propietarios", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { nombre, dni_cuit, telefono } = req.body || {};
+    if (!nombre) return res.status(400).json({ error: "Falta nombre" });
+    const { rows } = await pool.query(
+      `INSERT INTO propietarios (nombre, dni_cuit, telefono)
+       VALUES ($1, $2, $3)
+       RETURNING id, nombre, dni_cuit, telefono`,
+      [nombre, dni_cuit || null, telefono || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: "Error creando propietario" });
+  }
+});
+
+// --- DEPARTAMENTOS ---
+// Ya tenías GET /departamentos público; dejamos ese GET tal cual.
+// Agregamos POST protegido:
+app.post("/departamentos", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { nro, id_propietario } = req.body || {};
+    if (!nro) return res.status(400).json({ error: "Falta nro" });
+    const { rows } = await pool.query(
+      `INSERT INTO departamentos (nro, id_propietario)
+       VALUES ($1, $2)
+       RETURNING id, nro, id_propietario`,
+      [nro, id_propietario || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: "Error creando departamento" });
+  }
+});
+
+// --- ESTADOS ---
+app.get("/estados", authMiddleware, requireAuth, async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT id, nombre FROM estados ORDER BY nombre ASC");
+  res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: "Error listando estados" });
+  }
+});
+
+app.post("/estados", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { id, nombre } = req.body || {};
+    if (!id || !nombre) return res.status(400).json({ error: "Faltan id y nombre" });
+    const { rows } = await pool.query(
+      `INSERT INTO estados (id, nombre)
+       VALUES ($1, $2)
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id, nombre`,
+      [id, nombre]
+    );
+    if (rows.length === 0) return res.status(409).json({ error: "El estado ya existe" });
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: "Error creando estado" });
+  }
+});
+
+// --- TIPOS ---
+app.get("/tipos", authMiddleware, requireAuth, async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT id, nombre FROM tipos ORDER BY nombre ASC");
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: "Error listando tipos" });
+  }
+});
+
+app.post("/tipos", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { id, nombre } = req.body || {};
+    if (!id || !nombre) return res.status(400).json({ error: "Faltan id y nombre" });
+    const { rows } = await pool.query(
+      `INSERT INTO tipos (id, nombre)
+       VALUES ($1, $2)
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id, nombre`,
+      [id, nombre]
+    );
+    if (rows.length === 0) return res.status(409).json({ error: "El tipo ya existe" });
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: "Error creando tipo" });
+  }
+});
+
+// ========================
 // ENDPOINTS DE ESTADIAS (LOS TUYOS, SIN CAMBIOS)
 // ========================
 app.get("/estadias", async (req, res) => {
@@ -388,6 +495,8 @@ app.post("/estadias", async (req, res) => {
       inquilino,
       fecha_desde,
       fecha_hasta,
+      estado_id,        // <-- NUEVO: permitir elegir estado
+      // los siguientes pueden venir null; los mantenemos por compatibilidad
       cod_moneda,
       cotizacion,
       importe_total,
@@ -395,20 +504,39 @@ app.post("/estadias", async (req, res) => {
       id_cochera
     } = req.body;
 
+    // usuario_id desde JWT si viene Authorization
+    let usuarioId = null;
+    try {
+      const h = req.headers.authorization || "";
+      const token = h.startsWith("Bearer ") ? h.slice(7) : null;
+      if (token) {
+        const payload = jwt.verify(token, JWT_SECRET);
+        usuarioId = payload.uid || null;
+      }
+    } catch {}
+
+    const estado = estado_id || 'Act'; // default Act
+
     const sql = `
-      INSERT INTO estadias (departamento, inquilino, fecha_desde, fecha_hasta, estado_id, cod_moneda, cotizacion, importe_total, concepto, id_cochera)
-      VALUES ($1, $2, $3, $4, 'Act', $5, $6, $7, $8, $9) RETURNING *`;
+      INSERT INTO estadias (
+        departamento, inquilino, fecha_desde, fecha_hasta, estado_id,
+        cod_moneda, cotizacion, importe_total, concepto, id_cochera, usuario_id
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      RETURNING *`;
 
     const result = await pool.query(sql, [
       departamento,
       inquilino,
       fecha_desde,
       fecha_hasta,
-      cod_moneda,
-      cotizacion,
-      importe_total,
-      concepto,
-      id_cochera
+      estado,
+      cod_moneda || null,
+      cotizacion || null,
+      importe_total || null,
+      concepto || null,
+      id_cochera || null,
+      usuarioId
     ]);
 
     res.status(201).json(result.rows[0]);
