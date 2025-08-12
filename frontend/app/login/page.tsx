@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff, Mail, Lock } from "lucide-react";
 import { api } from "@/lib/api";
@@ -8,20 +8,24 @@ import { setAuthToken } from "@/lib/auth";
 
 type LoginResp = { token: string; user: { id: number; nombre: string; email: string; rol: string } };
 
-export default function Login() {
+// Wrapper exigido por Next para useSearchParams en pages
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="max-w-sm mx-auto p-6">Cargando…</div>}>
+      <LoginInner />
+    </Suspense>
+  );
+}
+
+function LoginInner() {
   const router = useRouter();
   const sp = useSearchParams();
-  const callbackUrl = sp.get("callbackUrl") || "/calendar"; // tu flujo original iba a /calendar
+  const callbackUrl = sp.get("callbackUrl") || "/calendar";
 
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  // Solo login (sin registro aquí). La creación de usuarios la hace "programador" en /users.
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ email: "", password: "" });
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -39,8 +43,8 @@ export default function Login() {
         email: formData.email,
         password: formData.password,
       });
-      setAuthToken(data.token);           // guarda JWT en cookie
-      router.replace(callbackUrl);        // vuelve a donde quería ir (o /calendar)
+      setAuthToken(data.token);
+      router.replace(callbackUrl);
     } catch (err: any) {
       setError(err?.message || "Credenciales incorrectas");
     } finally {
@@ -121,8 +125,6 @@ export default function Login() {
               )}
             </button>
           </form>
-
-          {/* Quitamos el bloque de "Usuario de prueba" */}
         </div>
       </div>
     </div>
