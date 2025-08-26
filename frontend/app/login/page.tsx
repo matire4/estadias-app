@@ -27,9 +27,14 @@ function LoginInner() {
       const ok = await login(formData.email, formData.password);
       if (ok) {
         const rawCb = sp.get('callbackUrl');
-        const dest = !rawCb || rawCb === '/' || rawCb.startsWith('/login') ? '/calendar' : rawCb;
-        // con AuthContext nuevo ya seteamos cookie, router.replace alcanza
-        router.replace(dest);
+        const dest =
+          !rawCb || rawCb === '/' || rawCb.startsWith('/login') ? '/calendar' : rawCb;
+
+        // 🔴 IMPORTANTE (Vercel): hard redirect para que el middleware vea la cookie sí o sí
+        window.location.href = dest;
+
+        // Si querés que local siga usando navegación del router, podrías hacer:
+        // if (location.hostname === 'localhost') router.replace(dest)
       } else {
         toastError('Email o contraseña incorrectos');
       }

@@ -1,3 +1,12 @@
-estadias.db
 node_modules/
+dist/
+*.log
+
+# Env
 .env
+.env.local
+
+# SO/Editor
+.DS_Store
+*.swp
+.vscode/

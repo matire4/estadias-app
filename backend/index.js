@@ -529,6 +529,183 @@ app.post("/tipos", authMiddleware, requireAuth, async (req, res) => {
   }
 });
 
+// ========================
+// MOVIMIENTOS
+// ========================
+
+// GET /movimientos?desde=YYYY-MM-DD&hasta=YYYY-MM-DD&cod_tipo=Inqu
+app.get("/movimientos", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { desde, hasta, cod_tipo } = req.query;
+    const params = [];
+    const where = [];
+
+    if (desde) {
+      params.push(desde);
+      where.push(`m.fecha >= $${params.length}`);
+    }
+    if (hasta) {
+      params.push(hasta);
+      where.push(`m.fecha <= $${params.length}`);
+    }
+    if (cod_tipo) {
+      params.push(cod_tipo);
+      where.push(`m.cod_tipo = $${params.length}`);
+    }
+
+    const sql = `
+      SELECT m.id, m.cod_tipo, t.nombre AS tipo_nombre,
+             m.importe_ars, m.importe_usd, m.cotizacion, m.concepto,
+             m.fecha, m.usuario_id,
+             u.nombre AS usuario_nombre
+      FROM movimientos m
+      LEFT JOIN tipos t ON t.id = m.cod_tipo
+      LEFT JOIN usuarios u ON u.id = m.usuario_id
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
+      ORDER BY m.fecha DESC, m.id DESC
+    `;
+
+    const r = await pool.query(sql, params);
+    const rows = r.rows.map(row => ({
+      ...row,
+      fecha: formatDateISO(row.fecha),
+    }));
+    res.json(rows);
+  } catch (err) {
+    console.error("Error en GET /movimientos:", err.message);
+    res.status(500).json({ error: "Error al obtener movimientos" });
+  }
+});
+
+// GET /movimientos/:id
+app.get("/movimientos/:id", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sql = `
+      SELECT m.id, m.cod_tipo, t.nombre AS tipo_nombre,
+             m.importe_ars, m.importe_usd, m.cotizacion, m.concepto,
+             m.fecha, m.usuario_id,
+             u.nombre AS usuario_nombre
+      FROM movimientos m
+      LEFT JOIN tipos t ON t.id = m.cod_tipo
+      LEFT JOIN usuarios u ON u.id = m.usuario_id
+      WHERE m.id = $1
+      LIMIT 1
+    `;
+    const r = await pool.query(sql, [id]);
+    if (r.rowCount === 0) return res.status(404).json({ error: "No encontrado" });
+    const row = r.rows[0];
+    res.json({ ...row, fecha: formatDateISO(row.fecha) });
+  } catch (err) {
+    console.error("Error en GET /movimientos/:id:", err.message);
+    res.status(500).json({ error: "Error al obtener el movimiento" });
+  }
+});
+
+// POST /movimientos
+app.post("/movimientos", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const {
+      cod_tipo,                 // p.ej. "Inqu"
+      importe_ars,              // opcional
+      importe_usd,              // opcional
+      cotizacion = 1,           // > 0
+      concepto = null,          // opcional
+      fecha = null              // opcional (YYYY-MM-DD). Si no, current_date
+    } = req.body || {};
+
+    if (!cod_tipo) return res.status(400).json({ error: "Falta cod_tipo" });
+    if ((importe_ars == null || Number.isNaN(Number(importe_ars))) &&
+        (importe_usd == null || Number.isNaN(Number(importe_usd)))) {
+      return res.status(400).json({ error: "Debe informar importe_ars o importe_usd" });
+    }
+    if (Number(cotizacion) <= 0) {
+      return res.status(400).json({ error: "cotizacion debe ser > 0" });
+    }
+
+    // usuario_id desde token (igual que estadías)
+    let usuarioId = null;
+    try {
+      const token = req.token;
+      if (token) {
+        const payload = jwt.verify(token, JWT_SECRET);
+        usuarioId = payload.uid || null;
+      }
+    } catch {}
+
+    const sql = `
+      INSERT INTO movimientos (
+        cod_tipo, importe_ars, importe_usd, cotizacion, concepto, fecha, usuario_id
+      )
+      VALUES ($1, $2, $3, $4, $5, COALESCE($6, CURRENT_DATE), $7)
+      RETURNING id, cod_tipo, importe_ars, importe_usd, cotizacion, concepto, fecha, usuario_id
+    `;
+    const values = [
+      cod_tipo,
+      (importe_ars ?? null),
+      (importe_usd ?? null),
+      Number(cotizacion),
+      concepto,
+      fecha,
+      usuarioId
+    ];
+
+    const r = await pool.query(sql, values);
+    const row = r.rows[0];
+    res.status(201).json({ ...row, fecha: formatDateISO(row.fecha) });
+  } catch (err) {
+    console.error("Error en POST /movimientos:", err.message);
+    res.status(500).json({ error: "Error al crear movimiento" });
+  }
+});
+
+// PUT /movimientos/:id
+app.put("/movimientos/:id", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const body = req.body || {};
+
+    const fields = [];
+    const params = [];
+    let i = 1;
+    const setField = (col, val) => { fields.push(`${col} = $${i++}`); params.push(val); };
+
+    // validaciones básicas
+    if (Object.prototype.hasOwnProperty.call(body, "cotizacion")) {
+      if (Number(body.cotizacion) <= 0) return res.status(400).json({ error: "cotizacion debe ser > 0" });
+    }
+
+    const updatable = ["cod_tipo", "importe_ars", "importe_usd", "cotizacion", "concepto", "fecha"];
+    for (const col of updatable) {
+      if (Object.prototype.hasOwnProperty.call(body, col)) setField(col, body[col]);
+    }
+    if (fields.length === 0) return res.status(400).json({ error: "Nada para actualizar" });
+
+    const sql = `UPDATE movimientos SET ${fields.join(", ")} WHERE id = $${i} RETURNING *`;
+    params.push(id);
+
+    const r = await pool.query(sql, params);
+    if (r.rowCount === 0) return res.status(404).json({ error: "No encontrado" });
+    const row = r.rows[0];
+    res.json({ ...row, fecha: formatDateISO(row.fecha) });
+  } catch (err) {
+    console.error("Error en PUT /movimientos/:id:", err.message);
+    res.status(500).json({ error: "Error al actualizar movimiento" });
+  }
+});
+
+// DELETE /movimientos/:id
+app.delete("/movimientos/:id", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query("DELETE FROM movimientos WHERE id = $1", [id]);
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error("Error en DELETE /movimientos/:id:", err.message);
+    res.status(500).json({ error: "Error al eliminar movimiento" });
+  }
+});
+
 // ESTADIAS
 app.get("/estadias", async (req, res) => {
   try {

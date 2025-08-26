@@ -1,29 +1,10 @@
-# Node modules
-**/node_modules/
-**/dist/
-
-# Builds
-build/
-*.log
-
-# Environment files
-.env
-.env.local
-
-# SQLite DB file
-*.db
-*.sqlite
-
-# IDE / Sistema operativo
+# SO/Editor
 .DS_Store
 *.swp
-*.swo
-Thumbs.db
+.vscode/
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Vercel
-.vercel/
+# yarn/npm lock opcional según tu flujo
+# Si usás npm, quedate con package-lock.json
+# Si NO querés lockfiles, ignorarlos (no recomendado para producción)
+# package-lock.json
+# yarn.lock

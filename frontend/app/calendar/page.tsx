@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { Plus, LogOut, Filter, X, Palette } from 'lucide-react';
+import { Plus, LogOut, Filter, X, Palette, Wallet } from 'lucide-react';
 
 import { useMe } from '@/app/context/AuthContext';
 import { api } from '@/lib/api';
@@ -13,8 +13,8 @@ import { toastError, toastSuccess } from '@/lib/toast';
 
 interface Estadia {
   id: number;
-  departamento?: string;          // puede venir como `departamento` (código) …
-  departamento_codigo?: string;   // … o como `departamento_codigo`
+  departamento?: string;          // el backend puede enviar "departamento"
+  departamento_codigo?: string;   // o "departamento_codigo"
   inquilino: string;
   fecha_desde: string;            // YYYY-MM-DD
   fecha_hasta: string;            // YYYY-MM-DD
@@ -22,6 +22,7 @@ interface Estadia {
 
 type DeptColorMap = Record<string, string>;
 
+/** --- colores --- */
 function hashColor(key: string): string {
   const palette = [
     '#2563eb', '#16a34a', '#dc2626', '#7c3aed', '#ea580c',
@@ -33,10 +34,21 @@ function hashColor(key: string): string {
   return palette[Math.abs(h) % palette.length];
 }
 
+/** --- fechas --- */
+function addOneDay(yyyy_mm_dd: string): string {
+  const d = new Date(yyyy_mm_dd + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function isPast(est: Estadia): boolean {
   // gris si la estadía ya terminó: fecha_hasta < hoy
   const end = new Date(est.fecha_hasta + 'T23:59:59');
-  const today = new Date(); today.setHours(0,0,0,0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
   return end < today;
 }
 
@@ -123,9 +135,9 @@ export default function CalendarPage() {
 
   const handleLogout = () => {
     logout();
-    router.push('/login'); // ← redirección inmediata
+    router.push('/login'); // redirección inmediata
   };
-  
+
   const handleFilter = (e: React.FormEvent) => {
     e.preventDefault();
     fetchEstadias(filterData);
@@ -148,6 +160,7 @@ export default function CalendarPage() {
     return Array.from(set).sort();
   }, [estadias]);
 
+  // eventos: color manual/hash + gris si terminó + “hasta” inclusiva
   const calendarEvents = useMemo(() => {
     return estadias.map((e) => {
       const dep = e.departamento_codigo || e.departamento || '—';
@@ -157,9 +170,10 @@ export default function CalendarPage() {
         id: String(e.id),
         title: `${dep} - ${e.inquilino}`,
         start: e.fecha_desde,
-        end: e.fecha_hasta,
+        end: addOneDay(e.fecha_hasta),   // ← inclusivo en FullCalendar
+        allDay: true,
         backgroundColor: color,
-        borderColor: color
+        borderColor: color,
       };
     });
   }, [estadias, deptColors]);
@@ -178,6 +192,7 @@ export default function CalendarPage() {
               <p className="text-sm text-gray-600">Bienvenido, {me?.nombre || me?.email || '—'}</p>
             </div>
             <div className="flex items-center space-x-2">
+              {/* Colores */}
               <button
                 onClick={() => setShowColors(v => !v)}
                 className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm bg-white hover:bg-gray-50"
@@ -186,16 +201,29 @@ export default function CalendarPage() {
                 <Palette className="w-4 h-4 mr-2" />
                 Colores
               </button>
+
+              {/* Filtros */}
               <button
                 onClick={() => setShowFilter(!showFilter)}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
                 <Filter className="w-4 h-4 mr-2" />
                 Filtrar
               </button>
+
+              {/* Agregar movimiento */}
+              <button
+                onClick={() => router.push('/movimientos/new')}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <Wallet className="w-4 h-4 mr-2" />
+                Agregar movimiento
+              </button>
+
+              {/* Logout */}
               <button
                 onClick={handleLogout}
-                className="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700"
+                className="inline-flex items-center px-3 py-2 rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700"
               >
                 <LogOut className="w-4 h-4 mr-2" />
                 Cerrar Sesión
@@ -287,6 +315,7 @@ export default function CalendarPage() {
         </div>
       </main>
 
+      {/* Botón flotante: nueva estadía */}
       <button
         onClick={() => router.push('/estadia/new')}
         className="fixed bottom-6 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"

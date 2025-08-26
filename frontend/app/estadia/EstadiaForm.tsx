@@ -7,8 +7,8 @@ import { toastError, toastSuccess } from '@/lib/toast';
 import { useMe } from '@/app/context/AuthContext';
 
 type Estado = { id: string; nombre: string };
-type Depto = { id: number; codigo: string; id_propietario?: number | null; propietario_nombre?: string | null };
-type Cochera = { id: number; codigo: string; id_propietario?: number | null; propietario_nombre?: string | null };
+type Depto = { id?: number; codigo?: string; nro?: string; id_propietario?: number | null };
+type Cochera = { id?: number; codigo?: string; id_propietario?: number | null };
 type Propietario = { id: number; nombre: string; dni_cuit?: string | null; telefono?: string | null };
 
 type EstadiaPayload = {
@@ -35,20 +35,21 @@ type EstadiaPayload = {
   importe_publicidad_ars?: number | null;
   importe_publicidad_usd?: number | null;
   concepto?: string | null;
+  // usuario_id: NO lo envío; el backend debería inferirlo del token
 };
 
 export default function EstadiaForm({ editingId }: { editingId?: number }) {
   const router = useRouter();
-  const { me } = useMe();
-  const isAdmin = me?.rol === 'admin' || me?.rol === 'programador';
+  const { me } = useMe(); // { id, nombre, email, rol }
+  const isAdmin = me?.rol === 'admin';
 
   // catálogos
-  const [propietarios, setPropietarios] = useState<Propietario[]>([]);
   const [departamentos, setDepartamentos] = useState<Depto[]>([]);
   const [cocheras, setCocheras] = useState<Cochera[]>([]);
   const [estados, setEstados] = useState<Estado[]>([]);
+  const [propietarios, setPropietarios] = useState<Propietario[]>([]);
 
-  // form principal
+  // form
   const [departamentoCodigo, setDepartamentoCodigo] = useState('');
   const [cocheraCodigo, setCocheraCodigo] = useState('');
   const [inquilino, setInquilino] = useState('');
@@ -56,9 +57,10 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
   const [fechaHasta, setFechaHasta] = useState('');
   const [estadoId, setEstadoId] = useState<string>('Act'); // default
   const [cotizacion, setCotizacion] = useState<string>('');
+
   const [concepto, setConcepto] = useState('');
 
-  // importes (string para inputs)
+  // importes (string para inputs; convierto a número/null al enviar)
   const [impTotalArs, setImpTotalArs] = useState('');
   const [impTotalUsd, setImpTotalUsd] = useState('');
   const [impInqArs, setImpInqArs] = useState('');
@@ -76,33 +78,30 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
 
   const [loading, setLoading] = useState(false);
 
-  // helpers
+  // ---- helpers ----
   const toNum = (s: string): number | null => {
-    const t = String(s ?? '').replace(',', '.').trim();
-    if (!t) return null;
+    if (s === undefined || s === null) return null;
+    const t = String(s).replace(',', '.').trim();
+    if (t === '') return null;
     const n = Number(t);
     return Number.isFinite(n) ? n : null;
   };
 
   const depOptions = useMemo(
     () =>
-      departamentos.map((d) => ({
-        value: d.codigo,
-        label: `${d.codigo}${d.propietario_nombre ? ` · ${d.propietario_nombre}` : ''}`,
-      })),
+      departamentos.map((d) => {
+        const codigo = d.codigo ?? d.nro ?? '';
+        return { value: codigo, label: codigo || '(sin código)' };
+      }),
     [departamentos]
   );
 
   const cocheraOptions = useMemo(
-    () =>
-      cocheras.map((c) => ({
-        value: c.codigo,
-        label: `${c.codigo}${c.propietario_nombre ? ` · ${c.propietario_nombre}` : ''}`,
-      })),
+    () => cocheras.map((c) => ({ value: c.codigo ?? '', label: c.codigo ?? '' })),
     [cocheras]
   );
 
-  // cargar catálogos
+  // ---- cargar catálogos ----
   useEffect(() => {
     (async () => {
       try {
@@ -112,24 +111,24 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
         toastError('No se pudieron cargar los departamentos');
       }
       try {
-        const cochs = await api.get<Cochera[]>('/cocheras'); // requiere token
+        const cochs = await api.get<Cochera[]>('/cocheras'); // con token
         setCocheras(cochs);
       } catch {
-        // cochera es opcional
+        // cochera es opcional; no bloqueo
       }
       try {
         const ests = await api.get<Estado[]>('/estados');
         setEstados(ests);
         if (ests.find((e) => e.id === 'Act')) setEstadoId('Act');
-      } catch {}
+      } catch { /* noop */ }
       try {
         const props = await api.get<Propietario[]>('/propietarios');
         setPropietarios(props);
-      } catch {}
+      } catch { /* noop */ }
     })();
   }, []);
 
-  // cargar estadía si editing
+  // ---- si estamos editando, cargo la estadía ----
   useEffect(() => {
     if (!editingId) return;
     (async () => {
@@ -142,7 +141,9 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
         setFechaHasta(data.fecha_hasta || '');
         if (data.estado_id) setEstadoId(data.estado_id);
         if (data.cotizacion != null) setCotizacion(String(data.cotizacion));
+
         setConcepto(data.concepto || '');
+
         setImpTotalArs(data.importe_total_ars != null ? String(data.importe_total_ars) : '');
         setImpTotalUsd(data.importe_total_usd != null ? String(data.importe_total_usd) : '');
         setImpInqArs(data.importe_inquilino_ars != null ? String(data.importe_inquilino_ars) : '');
@@ -157,15 +158,29 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
         setImpComUsd(data.importe_comision_usd != null ? String(data.importe_comision_usd) : '');
         setImpPubArs(data.importe_publicidad_ars != null ? String(data.importe_publicidad_ars) : '');
         setImpPubUsd(data.importe_publicidad_usd != null ? String(data.importe_publicidad_usd) : '');
-      } catch (e: any) {
-        console.error('GET /estadias/:id', e);
-        toastError('No se pudo cargar la estadía (¿existe GET /estadias/:id? y token válido?)');
+      } catch {
+        toastError('No se pudo cargar la estadía');
       }
     })();
   }, [editingId]);
 
+  // ---- totales dinámicos (opcional: si los querés autocalcular, descomentá esto) ----
+  useEffect(() => {
+    const ars =
+      (toNum(impInqArs) || 0) -
+      ((toNum(impPropArs) || 0) + (toNum(impLimpArs) || 0) + (toNum(impRecArs) || 0) + (toNum(impComArs) || 0) + (toNum(impPubArs) || 0));
+    const usd =
+      (toNum(impInqUsd) || 0) -
+      ((toNum(impPropUsd) || 0) + (toNum(impLimpUsd) || 0) + (toNum(impRecUsd) || 0) + (toNum(impComUsd) || 0) + (toNum(impPubUsd) || 0));
+    setImpTotalArs(Number.isFinite(ars) ? String(ars) : '');
+    setImpTotalUsd(Number.isFinite(usd) ? String(usd) : '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [impInqArs, impPropArs, impLimpArs, impRecArs, impComArs, impPubArs, impInqUsd, impPropUsd, impLimpUsd, impRecUsd, impComUsd, impPubUsd]);
+
+  // ---- submit ----
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+
     if (!departamentoCodigo || !inquilino || !fechaDesde || !fechaHasta) {
       return toastError('Completá los campos obligatorios');
     }
@@ -184,6 +199,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
       fecha_hasta: fechaHasta,
       cotizacion: Number(cotizacion),
       concepto: concepto || null,
+      // importes
       importe_total_ars: toNum(impTotalArs),
       importe_total_usd: toNum(impTotalUsd),
       importe_inquilino_ars: toNum(impInqArs),
@@ -220,55 +236,59 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
     }
   }
 
-  // ----- Modales Agregar -----
+  // ---- modales de “Agregar” rápido ----
+  // Depto
   const [showAddDepto, setShowAddDepto] = useState(false);
-  const [nuevoDeptoCod, setNuevoDeptoCod] = useState('');
+  const [nuevoDepto, setNuevoDepto] = useState('');
   const [nuevoDeptoPropId, setNuevoDeptoPropId] = useState<number | ''>('');
 
   async function saveDepto(e: React.FormEvent) {
     e.preventDefault();
-    if (!nuevoDeptoCod.trim()) return;
+    if (!nuevoDepto.trim()) return;
     try {
       await api.post('/departamentos', {
-        codigo: nuevoDeptoCod.trim(),
+        codigo: nuevoDepto.trim(),
         id_propietario: nuevoDeptoPropId || null,
       });
       const deps = await api.get<Depto[]>('/departamentos');
       setDepartamentos(deps);
-      setDepartamentoCodigo(nuevoDeptoCod.trim());
+      setDepartamentoCodigo(nuevoDepto.trim());
       setShowAddDepto(false);
-      setNuevoDeptoCod(''); setNuevoDeptoPropId('');
+      setNuevoDepto('');
+      setNuevoDeptoPropId('');
     } catch {
       toastError('No se pudo crear el departamento');
     }
   }
 
+  // Cochera
   const [showAddCoch, setShowAddCoch] = useState(false);
-  const [nuevaCochCod, setNuevaCochCod] = useState('');
+  const [nuevaCoch, setNuevaCoch] = useState('');
   const [nuevaCochPropId, setNuevaCochPropId] = useState<number | ''>('');
 
   async function saveCoch(e: React.FormEvent) {
     e.preventDefault();
-    if (!nuevaCochCod.trim()) return;
+    if (!nuevaCoch.trim()) return;
     try {
       await api.post('/cocheras', {
-        codigo: nuevaCochCod.trim(),
+        codigo: nuevaCoch.trim(),
         id_propietario: nuevaCochPropId || null,
       });
       const cochs = await api.get<Cochera[]>('/cocheras');
       setCocheras(cochs);
-      setCocheraCodigo(nuevaCochCod.trim());
+      setCocheraCodigo(nuevaCoch.trim());
       setShowAddCoch(false);
-      setNuevaCochCod(''); setNuevaCochPropId('');
+      setNuevaCoch('');
+      setNuevaCochPropId('');
     } catch {
       toastError('No se pudo crear la cochera');
     }
   }
 
+  // Estado
   const [showAddEstado, setShowAddEstado] = useState(false);
   const [nuevoEstadoId, setNuevoEstadoId] = useState('');
   const [nuevoEstadoNombre, setNuevoEstadoNombre] = useState('');
-
   async function saveEstado(e: React.FormEvent) {
     e.preventDefault();
     if (!nuevoEstadoId.trim() || !nuevoEstadoNombre.trim()) return;
@@ -284,26 +304,27 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
     }
   }
 
-  // Propietario (alta rápida)
+  // Propietario
   const [showAddProp, setShowAddProp] = useState(false);
-  const [pNombre, setPNombre] = useState('');
-  const [pDni, setPDni] = useState('');
-  const [pTel, setPTel] = useState('');
+  const [nuevoPropNombre, setNuevoPropNombre] = useState('');
+  const [nuevoPropDniCuit, setNuevoPropDniCuit] = useState('');
+  const [nuevoPropTelefono, setNuevoPropTelefono] = useState('');
 
-  async function saveProp(e: React.FormEvent) {
+  async function savePropietario(e: React.FormEvent) {
     e.preventDefault();
-    if (!pNombre.trim()) return;
+    if (!nuevoPropNombre.trim()) return;
     try {
       await api.post('/propietarios', {
-        nombre: pNombre.trim(),
-        dni_cuit: pDni.trim() || null,
-        telefono: pTel.trim() || null,
+        nombre: nuevoPropNombre.trim(),
+        dni_cuit: nuevoPropDniCuit.trim() || null,
+        telefono: nuevoPropTelefono.trim() || null,
       });
-      const props = await api.get<Propietario[]>('/propietarios');
-      setPropietarios(props);
+      const ps = await api.get<Propietario[]>('/propietarios');
+      setPropietarios(ps);
       setShowAddProp(false);
-      setPNombre(''); setPDni(''); setPTel('');
-      toastSuccess('Propietario creado');
+      setNuevoPropNombre('');
+      setNuevoPropDniCuit('');
+      setNuevoPropTelefono('');
     } catch {
       toastError('No se pudo crear el propietario');
     }
@@ -314,7 +335,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
       <h1 className="text-2xl font-semibold">{editingId ? 'Editar estadía' : 'Nueva estadía'}</h1>
 
       <form className="space-y-6" onSubmit={onSubmit}>
-        {/* Línea 1: Depto / Cochera / Inquilino */}
+        {/* Línea 1: Departamento / Cochera / Inquilino */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Departamento (código) *</label>
@@ -361,7 +382,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
           </div>
         </div>
 
-        {/* Línea 2: Fechas / Cotización */}
+        {/* Línea 2: Fechas y Cotización */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Desde *</label>
@@ -378,7 +399,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
           </div>
         </div>
 
-        {/* Estado (solo admin/programador) */}
+        {/* Estado (solo admin) */}
         {isAdmin && (
           <div>
             <label className="block text-sm font-medium mb-1">Estado</label>
@@ -424,7 +445,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
           </div>
         </div>
 
-        {/* Concepto */}
+        {/* Concepto / Observaciones */}
         <div>
           <label className="block text-sm font-medium mb-1">Concepto / Observaciones</label>
           <textarea className="w-full border rounded-lg px-3 py-2 min-h-[90px]" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
@@ -443,22 +464,29 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
           <form onSubmit={saveDepto} className="space-y-3">
             <div>
               <label className="text-sm">Código *</label>
-              <input className="w-full border rounded px-3 py-2" value={nuevoDeptoCod} onChange={(e) => setNuevoDeptoCod(e.target.value)} required />
+              <input className="w-full border rounded px-3 py-2" value={nuevoDepto} onChange={(e) => setNuevoDepto(e.target.value)} required />
             </div>
             <div>
               <label className="text-sm">Propietario</label>
-              <div className="flex gap-2">
-                <select
-                  className="flex-1 border rounded px-3 py-2"
-                  value={nuevoDeptoPropId}
-                  onChange={(e) => setNuevoDeptoPropId(e.target.value ? Number(e.target.value) : '')}
-                >
-                  <option value="">(sin propietario)</option>
-                  {propietarios.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
-                <button type="button" className="px-3 py-2 rounded bg-gray-100" onClick={() => setShowAddProp(true)}>Nuevo propietario</button>
-              </div>
+              <select
+                className="w-full border rounded px-3 py-2"
+                value={nuevoDeptoPropId === '' ? '' : String(nuevoDeptoPropId)}
+                onChange={(e) => setNuevoDeptoPropId(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">(sin propietario)</option>
+                {propietarios.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowAddProp(true)}
+                className="mt-2 text-sm text-blue-600 hover:underline"
+              >
+                + Nuevo propietario
+              </button>
             </div>
+
             <div className="flex justify-end gap-2">
               <button type="button" className="px-3 py-2 rounded bg-gray-100" onClick={() => setShowAddDepto(false)}>Cancelar</button>
               <button className="px-3 py-2 rounded bg-green-600 text-white">Guardar</button>
@@ -472,22 +500,29 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
           <form onSubmit={saveCoch} className="space-y-3">
             <div>
               <label className="text-sm">Código *</label>
-              <input className="w-full border rounded px-3 py-2" value={nuevaCochCod} onChange={(e) => setNuevaCochCod(e.target.value)} required />
+              <input className="w-full border rounded px-3 py-2" value={nuevaCoch} onChange={(e) => setNuevaCoch(e.target.value)} required />
             </div>
             <div>
               <label className="text-sm">Propietario</label>
-              <div className="flex gap-2">
-                <select
-                  className="flex-1 border rounded px-3 py-2"
-                  value={nuevaCochPropId}
-                  onChange={(e) => setNuevaCochPropId(e.target.value ? Number(e.target.value) : '')}
-                >
-                  <option value="">(sin propietario)</option>
-                  {propietarios.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                </select>
-                <button type="button" className="px-3 py-2 rounded bg-gray-100" onClick={() => setShowAddProp(true)}>Nuevo propietario</button>
-              </div>
+              <select
+                className="w-full border rounded px-3 py-2"
+                value={nuevaCochPropId === '' ? '' : String(nuevaCochPropId)}
+                onChange={(e) => setNuevaCochPropId(e.target.value ? Number(e.target.value) : '')}
+              >
+                <option value="">(sin propietario)</option>
+                {propietarios.map(p => (
+                  <option key={p.id} value={p.id}>{p.nombre}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setShowAddProp(true)}
+                className="mt-2 text-sm text-blue-600 hover:underline"
+              >
+                + Nuevo propietario
+              </button>
             </div>
+
             <div className="flex justify-end gap-2">
               <button type="button" className="px-3 py-2 rounded bg-gray-100" onClick={() => setShowAddCoch(false)}>Cancelar</button>
               <button className="px-3 py-2 rounded bg-green-600 text-white">Guardar</button>
@@ -508,11 +543,38 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
 
       {showAddProp && (
         <Modal title="Agregar propietario" onClose={() => setShowAddProp(false)}>
-          <form onSubmit={saveProp} className="space-y-3">
-            <div><label className="text-sm">Nombre *</label><input className="w-full border rounded px-3 py-2" value={pNombre} onChange={(e)=>setPNombre(e.target.value)} required /></div>
-            <div><label className="text-sm">DNI/CUIT</label><input className="w-full border rounded px-3 py-2" value={pDni} onChange={(e)=>setPDni(e.target.value)} /></div>
-            <div><label className="text-sm">Teléfono</label><input className="w-full border rounded px-3 py-2" value={pTel} onChange={(e)=>setPTel(e.target.value)} /></div>
-            <div className="flex justify-end gap-2"><button type="button" className="px-3 py-2 rounded bg-gray-100" onClick={()=>setShowAddProp(false)}>Cancelar</button><button className="px-3 py-2 rounded bg-green-600 text-white">Guardar</button></div>
+          <form onSubmit={savePropietario} className="space-y-3">
+            <div>
+              <label className="text-sm">Nombre *</label>
+              <input
+                className="w-full border rounded px-3 py-2"
+                value={nuevoPropNombre}
+                onChange={(e) => setNuevoPropNombre(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label className="text-sm">DNI / CUIT</label>
+              <input
+                className="w-full border rounded px-3 py-2"
+                value={nuevoPropDniCuit}
+                onChange={(e) => setNuevoPropDniCuit(e.target.value)}
+                placeholder="opcional"
+              />
+            </div>
+            <div>
+              <label className="text-sm">Teléfono</label>
+              <input
+                className="w-full border rounded px-3 py-2"
+                value={nuevoPropTelefono}
+                onChange={(e) => setNuevoPropTelefono(e.target.value)}
+                placeholder="opcional"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" className="px-3 py-2 rounded bg-gray-100" onClick={() => setShowAddProp(false)}>Cancelar</button>
+              <button className="px-3 py-2 rounded bg-green-600 text-white">Guardar</button>
+            </div>
           </form>
         </Modal>
       )}
@@ -524,7 +586,13 @@ function NumberInput({ label, value, onChange }: { label: string; value: string;
   return (
     <div>
       <label className="block text-sm text-gray-700 mb-1">{label}</label>
-      <input type="number" step="0.01" className="w-full border rounded-lg px-3 py-2" value={value} onChange={(e) => onChange(e.target.value)} />
+      <input
+        type="number"
+        step="0.01"
+        className="w-full border rounded-lg px-3 py-2"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
