@@ -1,7 +1,0 @@
-{
-  "/login/page": "app/login/page.js",
-  "/calendar/page": "app/calendar/page.js",
-  "/estadia/new/page": "app/estadia/new/page.js",
-  "/estadia/edit/[id]/page": "app/estadia/edit/[id]/page.js",
-  "/users/page": "app/users/page.js"
-}
