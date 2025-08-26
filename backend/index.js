@@ -1,4 +1,5 @@
 // index.js — backend adaptado a esquema nuevo con recreación opcional de BD
+require('dotenv').config();
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
@@ -8,18 +9,31 @@ const jwt = require("jsonwebtoken");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// --- CORS seguro (localhost, Render, Vercel) ---
+const ALLOWLIST = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://estadias-app.onrender.com",
+  "https://estadias-app-8tam.vercel.app",
+];
 const corsOptions = {
-  origin: [
-    'http://localhost:3000',
-    'http_//estadias-app-8tam.vercel.app',
-  ],
+  origin(origin, cb) {
+    // permitir llamadas sin Origin (Postman/cURL)
+    if (!origin) return cb(null, true);
+    if (
+      ALLOWLIST.includes(origin) ||
+      /https:\/\/.*-.*\.vercel\.app$/.test(origin) // previews de Vercel opcionales
+    ) {
+      return cb(null, true);
+    }
+    return cb(new Error(`CORS bloqueado para ${origin}`), false);
+  },
   credentials: true,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
-
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
 // ========================
@@ -239,6 +253,8 @@ async function recreateSchema() {
 // ========================
 // Endpoints
 // ========================
+app.get("/", (_req, res) => res.json({ ok: true, service: "backend-estadias" })); // sanity-check
+
 app.get("/health", async (_req, res) => {
   try {
     const r = await pool.query("SELECT 1 AS ok");
@@ -698,7 +714,6 @@ app.put("/estadias/:id", authMiddleware, requireAuth, async (req, res) => {
     for (const col of updatable) {
       if (Object.prototype.hasOwnProperty.call(body, col)) setField(col, body[col]);
     }
-    // compat: importe_total → importe_total_ars
     if (Object.prototype.hasOwnProperty.call(body, "importe_total")) {
       setField("importe_total_ars", body.importe_total);
     }
