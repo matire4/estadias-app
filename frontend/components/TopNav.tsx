@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useMe } from '@/hooks/useMe';
+import { usePathname, useRouter } from 'next/navigation';
+import useMe from '@/hooks/useMe'; // <- ahora apunta al AuthContext real
 
 export default function TopNav() {
   const { me, logout } = useMe();
   const pathname = usePathname();
+  const router = useRouter();
 
   const LinkItem = ({ href, label, isActive }: { href: string; label: string; isActive?: boolean }) => {
     const active = typeof isActive === 'boolean' ? isActive : pathname === href || pathname.startsWith(href + '/');
@@ -21,6 +22,11 @@ export default function TopNav() {
   };
 
   const estadiaActive = pathname.startsWith('/estadia');
+
+  function handleLogout() {
+    logout();           // limpia cookie y estado
+    router.push('/login'); // redirección inmediata al login
+  }
 
   return (
     <header className="sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b">
@@ -37,10 +43,10 @@ export default function TopNav() {
           {me ? (
             <>
               <span className="hidden sm:inline text-sm text-gray-600">
-                {me.nombre} <span className="text-gray-400">({me.rol})</span>
+                Bienvenido, {me?.nombre || me?.email || '—'} <span className="text-gray-400">({me.rol})</span>
               </span>
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="px-3 py-1.5 rounded-lg text-sm bg-gray-100 hover:bg-gray-200"
               >
                 Salir

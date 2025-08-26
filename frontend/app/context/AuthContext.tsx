@@ -1,136 +1,59 @@
-"use client"
-import { createContext, useContext, useState, ReactNode, useEffect } from 'react'
+'use client';
 
-interface User {
-  id: string
-  name: string
-  email: string
-  role: 'admin' | 'usuario'
-}
+import { createContext, useContext, useEffect, useState } from 'react';
+import { api, setAuthToken, clearAuthCookie } from '@/lib/api';
 
-interface AuthContextType {
-  user: User | null
-  isAuthenticated: boolean
-  login: (email: string, password: string) => Promise<boolean>
-  register: (userData: Omit<User, 'id'> & { password: string }) => Promise<boolean>
-  logout: () => void
-}
+type Me = { id: number; nombre: string; email: string; rol: 'programador' | 'admin' | 'normal' } | null;
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+type Ctx = {
+  me: Me;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => void;
+  refresh: () => Promise<void>;
+};
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [users, setUsers] = useState<(User & { password: string })[]>([{
-    id: '1',
-    name: 'Admin',
-    email: 'admin@test.com',
-    role: 'admin',
-    password: 'Admin123*'
-  }])
-  const [failedAttempts, setFailedAttempts] = useState(0)
+const AuthContext = createContext<Ctx | undefined>(undefined);
 
-  const isValidEmail = (email: string) => {
-    const regex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return regex.test(email)
-  }
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [me, setMe] = useState<Me>(null);
 
-  const isStrongPassword = (password: string) => {
-    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/
-    return regex.test(password)
-  }
-
-  const login = async (email: string, password: string): Promise<boolean> => {
-    if (failedAttempts >= 5) {
-      alert("Demasiados intentos fallidos. Intenta más tarde.")
-      return false
-    }
-
-    if (!isValidEmail(email)) {
-      alert("Formato de email inválido.")
-      return false
-    }
-
-    const foundUser = users.find(u => u.email === email && u.password === password)
-    if (foundUser) {
-      const userData = { id: foundUser.id, name: foundUser.name, email: foundUser.email, role: foundUser.role }
-      setUser(userData)
-      localStorage.setItem("user", JSON.stringify(userData))
-      localStorage.setItem("loginTime", Date.now().toString())
-      setFailedAttempts(0)
-      return true
-    } else {
-      setFailedAttempts(prev => prev + 1)
-      return false
+  async function refresh() {
+    try {
+      const data = await api.get<{ user: Me }>('/auth/verify');
+      setMe(data.user);
+    } catch {
+      setMe(null);
     }
   }
 
-  const register = async (userData: Omit<User, 'id'> & { password: string }): Promise<boolean> => {
-    if (!isValidEmail(userData.email)) {
-      alert("Formato de email inválido.")
-      return false
+  async function login(email: string, password: string) {
+    try {
+      const data = await api.post<{ token: string; user: Me }>('/auth/login', { email, password });
+      setAuthToken(data.token);     // guarda cookie auth_token ~2h
+      setMe(data.user);
+      return true;
+    } catch {
+      setMe(null);
+      return false;
     }
-
-    if (!isStrongPassword(userData.password)) {
-      alert("La contraseña no es lo suficientemente segura. Debe tener al menos 8 caracteres, una mayúscula, una minúscula, un número y un símbolo.")
-      return false
-    }
-
-    const existingUser = users.find(u => u.email === userData.email)
-    if (existingUser) {
-      alert("Ya existe un usuario registrado con ese email.")
-      return false
-    }
-
-    const newUser = {
-      ...userData,
-      id: Date.now().toString()
-    }
-
-    setUsers(prev => [...prev, newUser])
-    const savedUser = { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role }
-    setUser(savedUser)
-    localStorage.setItem("user", JSON.stringify(savedUser))
-    localStorage.setItem("loginTime", Date.now().toString())
-    return true
   }
 
-  const logout = () => {
-    setUser(null)
-    localStorage.removeItem("user")
-    localStorage.removeItem("loginTime")
+  function logout() {
+    clearAuthCookie();
+    setMe(null);
   }
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user")
-    const loginTime = localStorage.getItem("loginTime")
-    if (storedUser && loginTime) {
-      const currentTime = Date.now()
-      const hoursPassed = (currentTime - parseInt(loginTime)) / (1000 * 60 * 60)
-      if (hoursPassed < 2) {
-        setUser(JSON.parse(storedUser))
-      } else {
-        logout()
-      }
-    }
-  }, [])
+  useEffect(() => { refresh(); }, []);
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      isAuthenticated: !!user,
-      login,
-      register,
-      logout
-    }}>
+    <AuthContext.Provider value={{ me, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
-  )
+  );
 }
 
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider')
-  }
-  return context
+export function useMe() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useMe must be used within AuthProvider');
+  return ctx;
 }

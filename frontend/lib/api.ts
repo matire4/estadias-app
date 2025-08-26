@@ -1,53 +1,55 @@
 // /frontend/lib/api.ts
-import { getAuthToken, clearAuthToken } from '@/lib/auth';
-import { toast, toastError } from '@/lib/toast';
+const BASE = process.env.NEXT_PUBLIC_API_URL || 'https://estadias-app.onrender.com';
+const AUTH_COOKIE = 'auth_token';
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL!;
-if (!API_URL) throw new Error('Falta NEXT_PUBLIC_API_URL');
-
-function currentPathWithQuery(): string {
-  if (typeof window === 'undefined') return '/';
-  return window.location.pathname + window.location.search;
+function readAuthCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  const m = document.cookie.match(new RegExp('(?:^|; )' + AUTH_COOKIE + '=([^;]*)'));
+  return m ? decodeURIComponent(m[1]) : null;
 }
 
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const url = `${API_URL}${path}`;
-  const headers: HeadersInit = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+async function http<T>(method: string, path: string, body?: any): Promise<T> {
+  const token = readAuthCookie();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const token = getAuthToken();
-  if (token) (headers as any).Authorization = `Bearer ${token}`;
+  // Timeout de 15s
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
 
-  const res = await fetch(url, { ...options, headers, cache: 'no-store' });
+  try {
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store',
+      signal: ctrl.signal,
+    });
 
-  // Manejo específico de 401/403
-  if (res.status === 401) {
-    // Sesión expirada o token inválido
-    clearAuthToken();
-    toastError('Sesión expirada. Volvé a iniciar sesión.');
-    const cb = encodeURIComponent(currentPathWithQuery());
-    // pequeña pausa para que el usuario vea el toast
-    setTimeout(() => {
-      if (typeof window !== 'undefined') window.location.href = `/login?callbackUrl=${cb}`;
-    }, 150);
-    throw new Error('Unauthorized');
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(text || `${res.status} ${res.statusText}`);
+    }
+    return res.json() as Promise<T>;
+  } finally {
+    clearTimeout(t);
   }
-  if (res.status === 403) {
-    toast('No tenés permisos para esta acción.', 'error');
-    // No redirigimos; dejamos que la UI decida
-    throw new Error('Forbidden');
-  }
-
-  if (!res.ok) {
-    let detail = '';
-    try { detail = await res.text(); } catch {}
-    throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` - ${detail}` : ''}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 export const api = {
-  get:  <T>(p: string)           => request<T>(p),
-  post: <T>(p: string, b: any)   => request<T>(p, { method: 'POST', body: JSON.stringify(b) }),
-  put:  <T>(p: string, b: any)   => request<T>(p, { method: 'PUT',  body: JSON.stringify(b) }),
-  del:  <T>(p: string)           => request<T>(p, { method: 'DELETE' }),
+  get: <T>(path: string) => http<T>('GET', path),
+  post: <T>(path: string, body: any) => http<T>('POST', path, body),
+  put:  <T>(path: string, body: any) => http<T>('PUT', path, body),
+  del:  <T>(path: string)          => http<T>('DELETE', path),
 };
+
+// utilidades opcionales para setear/limpiar cookie desde login/logout
+export function setAuthToken(token: string) {
+  if (typeof document === 'undefined') return;
+  // cookie simple; si querés marcar max-age 2h podés ajustar este valor
+  document.cookie = `${AUTH_COOKIE}=${encodeURIComponent(token)}; Path=/; SameSite=Lax`;
+}
+export function clearAuthCookie() {
+  if (typeof document === 'undefined') return;
+  document.cookie = `${AUTH_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+}

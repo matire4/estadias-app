@@ -15,8 +15,13 @@ function notifyAuthChanged() {
 
 export function setAuthToken(token: string) {
   if (typeof document === 'undefined') return;
-  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${MAX_AGE_SECONDS}; SameSite=Lax`;
-  notifyAuthChanged();
+  const isHttps = typeof location !== 'undefined' && location.protocol === 'https:';
+  document.cookie =
+    `${COOKIE_NAME}=${encodeURIComponent(token)}; Path=/; Max-Age=${MAX_AGE_SECONDS}; SameSite=Lax`
+    + (isHttps ? '; Secure' : '');
+  // notificar cambios de auth como antes
+  try { localStorage.setItem('auth:changed', String(Date.now())); } catch {}
+  window.dispatchEvent(new Event('auth-changed'));
 }
 
 export function getAuthToken(): string | null {

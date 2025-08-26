@@ -8,7 +8,18 @@ const jwt = require("jsonwebtoken");
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',
+    'http_//estadias-app-8tam.vercel.app',
+  ],
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 // ========================
@@ -701,6 +712,30 @@ app.put("/estadias/:id", authMiddleware, requireAuth, async (req, res) => {
   } catch (err) {
     console.error("Error en PUT /estadias:", err.message);
     res.status(500).json({ error: "Error al actualizar estadía" });
+  }
+});
+
+// GET /estadias/:id  → devuelve la estadía con códigos de depto/cochera
+app.get("/estadias/:id", authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sql = `
+      SELECT
+        e.*,
+        d.codigo AS departamento,
+        c.codigo AS cochera
+      FROM estadias e
+      LEFT JOIN departamentos d ON d.id = e.departamento_id
+      LEFT JOIN cocheras c ON c.id = e.cochera_id
+      WHERE e.id = $1
+      LIMIT 1
+    `;
+    const r = await pool.query(sql, [id]);
+    if (r.rowCount === 0) return res.status(404).json({ error: "No encontrada" });
+    res.json(r.rows[0]);
+  } catch (err) {
+    console.error("Error en GET /estadias/:id:", err.message);
+    res.status(500).json({ error: "Error al obtener la estadía" });
   }
 });
 

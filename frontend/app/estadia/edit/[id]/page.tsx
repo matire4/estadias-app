@@ -1,10 +1,11 @@
-// app/estadia/edit/[id]/page.tsx
-"use client";
+'use client';
+import EstadiaForm from '../../EstadiaForm';
+import { useEffect } from 'react';
 
-import { useParams } from "next/navigation";
-import EstadiaForm from "../../EstadiaForm";
-
-export default function EditEstadiaPage() {
-  const { id } = useParams();
-  return <EstadiaForm editingId={id as string} />;
+export default function EditEstadiaPage({ params }: { params: { id: string } }) {
+  const idNum = Number(params.id);
+  useEffect(() => {
+    console.log('[EDIT route] params.id =', params.id, '→ idNum =', idNum);
+  }, [params.id, idNum]);
+  return <EstadiaForm editingId={Number.isFinite(idNum) ? idNum : undefined} />;
 }
