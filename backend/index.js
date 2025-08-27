@@ -932,98 +932,141 @@ app.delete("/estadias/:id", authMiddleware, requireAuth, async (req, res) => {
 });
 
 // ========================
-// EXPORTS A EXCEL
+// EXPORTACIONES A EXCEL
 // ========================
+const ExcelJS = require("exceljs");
 
-// helpers: agrega una hoja al workbook con datos tabulares
-async function addSheetFromQuery(workbook, sheetName, rows) {
-  const ws = workbook.addWorksheet(sheetName);
-  if (!rows || rows.length === 0) {
-    ws.addRow(['(sin datos)']);
-    return;
-  }
-  // encabezados
-  const headers = Object.keys(rows[0]);
-  ws.addRow(headers);
-  // filas
-  for (const r of rows) {
-    const vals = headers.map(h => {
-      const v = r[h];
-      if (v instanceof Date) return v.toISOString();
-      if (v === null || v === undefined) return '';
-      return String(v);
-    });
-    ws.addRow(vals);
-  }
-}
+// GET /export/excel-all  → una hoja por tabla
+app.get("/export/excel-all", async (req, res) => {
+  const user = verifyTokenOr401(req, res);
+  if (!user) return res.status(401).json({ error: "Falta token" });
 
-// GET /export/excel-all → una hoja por tabla principal
-app.get('/export/excel-all', authMiddleware, requireAuth, async (_req, res) => {
   try {
-    const workbook = new ExcelJS.Workbook();
+    const wb = new ExcelJS.Workbook();
 
-    // Listado fijo de tablas (evitamos SQL injection)
-    const tables = [
-      'usuarios','estados','tipos','propietarios','departamentos','cocheras',
-      'estadias','movimientos','observaciones'
-    ];
-
-    for (const t of tables) {
-      // orden básico por primera columna "id" si existe
-      let q = `SELECT * FROM ${t}`;
-      if (['usuarios','propietarios','departamentos','cocheras','estadias','movimientos','observaciones'].includes(t)) {
-        q += ' ORDER BY id ASC';
-      } else if (['estados','tipos'].includes(t)) {
-        q += ' ORDER BY id ASC';
-      }
-      const r = await pool.query(q);
-      await addSheetFromQuery(workbook, t, r.rows);
+    // util para hoja
+    async function addSheetFromQuery(sheetName, sql) {
+      const sh = wb.addWorksheet(sheetName);
+      const { rows, fields } = await pool.query(sql);
+      if (!fields || fields.length === 0) { sh.addRow(["(sin columnas)"]); return; }
+      sh.addRow(fields.map(f => f.name));
+      rows.forEach(r => sh.addRow(fields.map(f => r[f.name])));
+      sh.columns.forEach(col => { col.width = Math.min(40, Math.max(10, String(col.header || "").length + 2)); });
     }
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition','attachment; filename="bd_completa.xlsx"');
-    res.send(Buffer.from(buffer));
+    await addSheetFromQuery("usuarios", "SELECT id,nombre,email,rol FROM usuarios ORDER BY id");
+    await addSheetFromQuery("propietarios", "SELECT id,nombre,dni_cuit,telefono FROM propietarios ORDER BY id");
+    await addSheetFromQuery("departamentos", "SELECT id,codigo,id_propietario FROM departamentos ORDER BY id");
+    await addSheetFromQuery("cocheras", "SELECT id,codigo,id_propietario FROM cocheras ORDER BY id");
+    await addSheetFromQuery("estados", "SELECT id,nombre FROM estados ORDER BY id");
+    await addSheetFromQuery("tipos", "SELECT id,nombre FROM tipos ORDER BY id");
+    await addSheetFromQuery("estadias", `
+      SELECT e.*, d.codigo AS departamento_codigo, c.codigo AS cochera_codigo
+      FROM estadias e
+      LEFT JOIN departamentos d ON d.id=e.departamento_id
+      LEFT JOIN cocheras c ON c.id=e.cochera_id
+      ORDER BY e.id
+    `);
+    await addSheetFromQuery("movimientos", `
+      SELECT id, cod_tipo, propietario_id, importe_ars, importe_usd, cotizacion, concepto, fecha, usuario_id
+      FROM movimientos ORDER BY fecha DESC, id DESC
+    `);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="bd_completa.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
   } catch (e) {
-    console.error('Error /export/excel-all:', e);
-    res.status(500).json({ error: 'No se pudo generar el Excel' });
+    console.error("EXPORT ALL", e);
+    res.status(500).json({ error: "Error exportando" });
   }
 });
 
 // GET /export/estadias?scope=activas|cerradas|no-cerradas
-app.get('/export/estadias', authMiddleware, requireAuth, async (req, res) => {
+app.get("/export/estadias", async (req, res) => {
+  const user = verifyTokenOr401(req, res);
+  if (!user) return res.status(401).json({ error: "Falta token" });
+
   try {
-    const scope = String(req.query.scope || '').toLowerCase();
-    let where = '';
-    if (scope === 'cerradas') {
-      where = "WHERE e.estado_id = 'Cerr'";
-    } else if (scope === 'no-cerradas') {
-      where = "WHERE COALESCE(e.estado_id,'') <> 'Cerr'";
-    } else if (scope === 'activas') {
-      where = "WHERE e.fecha_hasta >= CURRENT_DATE";
-    } // si no matchea, exporta todas
+    const wb = new ExcelJS.Workbook();
+    const sh = wb.addWorksheet("estadias");
 
-    const q = `
-      SELECT e.*,
-             d.codigo AS departamento_codigo,
-             c.codigo AS cochera_codigo
+    const { rows } = await pool.query(`
+      SELECT e.id, d.codigo AS departamento, e.inquilino,
+             to_char(e.fecha_desde,'YYYY-MM-DD') AS fecha_desde,
+             to_char(e.fecha_hasta,'YYYY-MM-DD') AS fecha_hasta,
+             e.estado_id
       FROM estadias e
-      JOIN departamentos d ON d.id = e.departamento_id
-      LEFT JOIN cocheras c ON c.id = e.cochera_id
-      ${where}
-      ORDER BY e.id ASC`;
-    const r = await pool.query(q);
+      JOIN departamentos d ON d.id=e.departamento_id
+      ORDER BY e.id
+    `);
 
-    const workbook = new ExcelJS.Workbook();
-    await addSheetFromQuery(workbook, `estadias_${scope || 'todas'}`, r.rows);
+    const scope = String(req.query.scope || "");
+    const today = new Date().toISOString().slice(0,10);
+    const filtered = rows.filter(r => {
+      if (scope === "activas") return r.fecha_hasta >= today;
+      if (scope === "cerradas") return r.estado_id === "Cerr";
+      if (scope === "no-cerradas") return r.estado_id !== "Cerr";
+      return true;
+    });
 
-    const buffer = await workbook.xlsx.writeBuffer();
-    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition',`attachment; filename="estadias_${scope || 'todas'}.xlsx"`);
-    res.send(Buffer.from(buffer));
+    sh.addRow(["ID","Depto","Inquilino","Desde","Hasta","Estado"]);
+    filtered.forEach(r => sh.addRow([r.id, r.departamento, r.inquilino, r.fecha_desde, r.fecha_hasta, r.estado_id || ""]));
+    sh.columns.forEach(c => c.width = 16);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="estadias.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
   } catch (e) {
-    console.error('Error /export/estadias:', e);
-    res.status(500).json({ error: 'No se pudo generar el Excel' });
+    console.error("EXPORT ESTADIAS", e);
+    res.status(500).json({ error: "Error exportando" });
+  }
+});
+
+// GET /export/movimientos?desde=YYYY-MM-DD&hasta=YYYY-MM-DD&cod_tipo=Prop&propietario_id=#
+app.get("/export/movimientos", async (req, res) => {
+  const user = verifyTokenOr401(req, res);
+  if (!user) return res.status(401).json({ error: "Falta token" });
+
+  try {
+    const { desde, hasta, cod_tipo, propietario_id } = req.query;
+
+    const wb = new ExcelJS.Workbook();
+    const sh = wb.addWorksheet("movimientos");
+    sh.addRow(["Fecha","Tipo","Propietario","ARS","USD","Cotización","Concepto"]);
+
+    const params = [];
+    const where = [];
+    if (desde) { params.push(desde); where.push(`m.fecha >= $${params.length}`); }
+    if (hasta) { params.push(hasta); where.push(`m.fecha <= $${params.length}`); }
+    if (cod_tipo) { params.push(cod_tipo); where.push(`m.cod_tipo = $${params.length}`); }
+    if (propietario_id) { params.push(propietario_id); where.push(`m.propietario_id = $${params.length}`); }
+
+    const sql = `
+      SELECT to_char(m.fecha,'YYYY-MM-DD') AS fecha,
+             m.cod_tipo, COALESCE(p.nombre,'—') AS propietario,
+             COALESCE(m.importe_ars,0) AS importe_ars,
+             COALESCE(m.importe_usd,0) AS importe_usd,
+             m.cotizacion, m.concepto
+      FROM movimientos m
+      LEFT JOIN propietarios p ON p.id = m.propietario_id
+      ${where.length ? "WHERE " + where.join(" AND ") : ""}
+      ORDER BY m.fecha DESC, m.id DESC
+    `;
+    const { rows } = await pool.query(sql, params);
+    rows.forEach(r =>
+      sh.addRow([r.fecha, r.cod_tipo, r.propietario, r.importe_ars, r.importe_usd, r.cotizacion, r.concepto || ""])
+    );
+    sh.columns.forEach(c => c.width = 18);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="movimientos.xlsx"');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error("EXPORT MOVS", e);
+    res.status(500).json({ error: "Error exportando" });
   }
 });
 

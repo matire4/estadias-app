@@ -218,10 +218,10 @@ export default function MovimientosPage() {
               {/* Totales */}
               <tr className="border-t bg-gray-50 font-medium">
                 <td className="px-4 py-2" colSpan={3}>Totales</td>
-                <td className="px-4 py-2 text-right">{fmt2(totalArs)}</td>
-                <td className="px-4 py-2 text-right">{fmt2(totalUsd)}</td>
+                <td className="px-4 py-2 text-right">{Number(totalArs || 0).toFixed(2)}</td>
+                <td className="px-4 py-2 text-right">{Number(totalUsd || 0).toFixed(2)}</td>
                 <td className="px-4 py-2" colSpan={2}></td>
-              </tr>
+            </tr>
             </tbody>
           </table>
         )}
