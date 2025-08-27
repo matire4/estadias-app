@@ -1062,3 +1062,8 @@ async function start() {
     console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
   });
 }
+
+start().catch((e) => {
+  console.error("❌ Falló el arranque:", e);
+  process.exit(1);
+});
