@@ -35,7 +35,6 @@ type EstadiaPayload = {
   importe_publicidad_ars?: number | null;
   importe_publicidad_usd?: number | null;
   concepto?: string | null;
-  // usuario_id: NO lo envío; el backend debería inferirlo del token
 };
 
 export default function EstadiaForm({ editingId }: { editingId?: number }) {
@@ -61,8 +60,6 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
   const [concepto, setConcepto] = useState('');
 
   // importes (string para inputs; convierto a número/null al enviar)
-  const [impTotalArs, setImpTotalArs] = useState('');
-  const [impTotalUsd, setImpTotalUsd] = useState('');
   const [impInqArs, setImpInqArs] = useState('');
   const [impInqUsd, setImpInqUsd] = useState('');
   const [impPropArs, setImpPropArs] = useState('');
@@ -76,6 +73,10 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
   const [impPubArs, setImpPubArs] = useState('');
   const [impPubUsd, setImpPubUsd] = useState('');
 
+  // totales (derivados – NO editables)
+  const [impTotalArs, setImpTotalArs] = useState('');
+  const [impTotalUsd, setImpTotalUsd] = useState('');
+
   const [loading, setLoading] = useState(false);
 
   // ---- helpers ----
@@ -85,6 +86,12 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
     if (t === '') return null;
     const n = Number(t);
     return Number.isFinite(n) ? n : null;
+  };
+
+  const fmt = (n: string | number | null | undefined) => {
+    const v = typeof n === 'string' ? Number(n) : (n ?? 0);
+    if (!Number.isFinite(v)) return '0';
+    return new Intl.NumberFormat('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v as number);
   };
 
   const depOptions = useMemo(
@@ -113,9 +120,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
       try {
         const cochs = await api.get<Cochera[]>('/cocheras'); // con token
         setCocheras(cochs);
-      } catch {
-        // cochera es opcional; no bloqueo
-      }
+      } catch { /* noop */ }
       try {
         const ests = await api.get<Estado[]>('/estados');
         setEstados(ests);
@@ -144,8 +149,7 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
 
         setConcepto(data.concepto || '');
 
-        setImpTotalArs(data.importe_total_ars != null ? String(data.importe_total_ars) : '');
-        setImpTotalUsd(data.importe_total_usd != null ? String(data.importe_total_usd) : '');
+        // cargas existentes
         setImpInqArs(data.importe_inquilino_ars != null ? String(data.importe_inquilino_ars) : '');
         setImpInqUsd(data.importe_inquilino_usd != null ? String(data.importe_inquilino_usd) : '');
         setImpPropArs(data.importe_propietario_ars != null ? String(data.importe_propietario_ars) : '');
@@ -158,13 +162,35 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
         setImpComUsd(data.importe_comision_usd != null ? String(data.importe_comision_usd) : '');
         setImpPubArs(data.importe_publicidad_ars != null ? String(data.importe_publicidad_ars) : '');
         setImpPubUsd(data.importe_publicidad_usd != null ? String(data.importe_publicidad_usd) : '');
+
+        // totales derivados iniciales (por si hay valores guardados)
+        setImpTotalArs(
+          String(
+            (Number(data.importe_inquilino_ars || 0)) -
+            ((Number(data.importe_propietario_ars || 0)) +
+             (Number(data.importe_limpieza_ars || 0)) +
+             (Number(data.importe_recepcion_ars || 0)) +
+             (Number(data.importe_comision_ars || 0)) +
+             (Number(data.importe_publicidad_ars || 0)))
+          )
+        );
+        setImpTotalUsd(
+          String(
+            (Number(data.importe_inquilino_usd || 0)) -
+            ((Number(data.importe_propietario_usd || 0)) +
+             (Number(data.importe_limpieza_usd || 0)) +
+             (Number(data.importe_recepcion_usd || 0)) +
+             (Number(data.importe_comision_usd || 0)) +
+             (Number(data.importe_publicidad_usd || 0)))
+          )
+        );
       } catch {
         toastError('No se pudo cargar la estadía');
       }
     })();
   }, [editingId]);
 
-  // ---- totales dinámicos (opcional: si los querés autocalcular, descomentá esto) ----
+  // ---- totales dinámicos (derivados) ----
   useEffect(() => {
     const ars =
       (toNum(impInqArs) || 0) -
@@ -199,9 +225,10 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
       fecha_hasta: fechaHasta,
       cotizacion: Number(cotizacion),
       concepto: concepto || null,
-      // importes
+      // importes (totales derivados)
       importe_total_ars: toNum(impTotalArs),
       importe_total_usd: toNum(impTotalUsd),
+      // desgloses
       importe_inquilino_ars: toNum(impInqArs),
       importe_inquilino_usd: toNum(impInqUsd),
       importe_propietario_ars: toNum(impPropArs),
@@ -414,14 +441,13 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
           </div>
         )}
 
-        {/* Importes: dos columnas ARS / USD */}
+        {/* Importes: dos columnas ARS / USD (sin los totales editables) */}
         <div>
           <div className="text-center text-sm text-gray-600 mb-2">Importes</div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <div className="font-medium mb-2">ARS ($)</div>
               <div className="space-y-3">
-                <NumberInput label="Importe Total" value={impTotalArs} onChange={setImpTotalArs} />
                 <NumberInput label="Importe Inquilino" value={impInqArs} onChange={setImpInqArs} />
                 <NumberInput label="Importe Propietario" value={impPropArs} onChange={setImpPropArs} />
                 <NumberInput label="Importe Limpieza" value={impLimpArs} onChange={setImpLimpArs} />
@@ -433,7 +459,6 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
             <div>
               <div className="font-medium mb-2">USD (U$D)</div>
               <div className="space-y-3">
-                <NumberInput label="Importe Total" value={impTotalUsd} onChange={setImpTotalUsd} />
                 <NumberInput label="Importe Inquilino" value={impInqUsd} onChange={setImpInqUsd} />
                 <NumberInput label="Importe Propietario" value={impPropUsd} onChange={setImpPropUsd} />
                 <NumberInput label="Importe Limpieza" value={impLimpUsd} onChange={setImpLimpUsd} />
@@ -441,6 +466,21 @@ export default function EstadiaForm({ editingId }: { editingId?: number }) {
                 <NumberInput label="Importe Comisión" value={impComUsd} onChange={setImpComUsd} />
                 <NumberInput label="Importe Publicidad" value={impPubUsd} onChange={setImpPubUsd} />
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Resumen (totales derivados, no editables) */}
+        <div className="rounded-lg border bg-gray-50 p-4">
+          <div className="text-sm text-gray-600 mb-2 font-medium">Resumen</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex items-center justify-between">
+              <span className="text-gray-700">Importe Total (ARS)</span>
+              <span className="font-semibold">${fmt(impTotalArs)}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-gray-700">Importe Total (USD)</span>
+              <span className="font-semibold">U$D {fmt(impTotalUsd)}</span>
             </div>
           </div>
         </div>

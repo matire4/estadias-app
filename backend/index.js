@@ -5,6 +5,7 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -540,27 +541,20 @@ app.get("/movimientos", authMiddleware, requireAuth, async (req, res) => {
     const params = [];
     const where = [];
 
-    if (desde) {
-      params.push(desde);
-      where.push(`m.fecha >= $${params.length}`);
-    }
-    if (hasta) {
-      params.push(hasta);
-      where.push(`m.fecha <= $${params.length}`);
-    }
-    if (cod_tipo) {
-      params.push(cod_tipo);
-      where.push(`m.cod_tipo = $${params.length}`);
-    }
+    if (desde) { params.push(desde); where.push(`m.fecha >= $${params.length}`); }
+    if (hasta) { params.push(hasta); where.push(`m.fecha <= $${params.length}`); }
+    if (cod_tipo) { params.push(cod_tipo); where.push(`m.cod_tipo = $${params.length}`); }
 
     const sql = `
       SELECT m.id, m.cod_tipo, t.nombre AS tipo_nombre,
              m.importe_ars, m.importe_usd, m.cotizacion, m.concepto,
-             m.fecha, m.usuario_id,
-             u.nombre AS usuario_nombre
+             m.fecha, m.usuario_id, m.propietario_id,
+             u.nombre AS usuario_nombre,
+             p.nombre AS propietario_nombre
       FROM movimientos m
       LEFT JOIN tipos t ON t.id = m.cod_tipo
       LEFT JOIN usuarios u ON u.id = m.usuario_id
+      LEFT JOIN propietarios p ON p.id = m.propietario_id
       ${where.length ? "WHERE " + where.join(" AND ") : ""}
       ORDER BY m.fecha DESC, m.id DESC
     `;
@@ -584,11 +578,13 @@ app.get("/movimientos/:id", authMiddleware, requireAuth, async (req, res) => {
     const sql = `
       SELECT m.id, m.cod_tipo, t.nombre AS tipo_nombre,
              m.importe_ars, m.importe_usd, m.cotizacion, m.concepto,
-             m.fecha, m.usuario_id,
-             u.nombre AS usuario_nombre
+             m.fecha, m.usuario_id, m.propietario_id,
+             u.nombre AS usuario_nombre,
+             p.nombre AS propietario_nombre
       FROM movimientos m
       LEFT JOIN tipos t ON t.id = m.cod_tipo
       LEFT JOIN usuarios u ON u.id = m.usuario_id
+      LEFT JOIN propietarios p ON p.id = m.propietario_id
       WHERE m.id = $1
       LIMIT 1
     `;
@@ -606,56 +602,47 @@ app.get("/movimientos/:id", authMiddleware, requireAuth, async (req, res) => {
 app.post("/movimientos", authMiddleware, requireAuth, async (req, res) => {
   try {
     const {
-      cod_tipo,                 // p.ej. "Inqu"
-      importe_ars,              // opcional
-      importe_usd,              // opcional
-      cotizacion = 1,           // > 0
-      concepto = null,          // opcional
-      fecha = null              // opcional (YYYY-MM-DD). Si no, current_date
+      cod_tipo,
+      importe_ars = null,
+      importe_usd = null,
+      cotizacion,
+      concepto = null,
+      fecha = null,
+      propietario_id = null,
     } = req.body || {};
 
     if (!cod_tipo) return res.status(400).json({ error: "Falta cod_tipo" });
-    if ((importe_ars == null || Number.isNaN(Number(importe_ars))) &&
-        (importe_usd == null || Number.isNaN(Number(importe_usd)))) {
-      return res.status(400).json({ error: "Debe informar importe_ars o importe_usd" });
-    }
-    if (Number(cotizacion) <= 0) {
-      return res.status(400).json({ error: "cotizacion debe ser > 0" });
+    if (cotizacion === undefined || cotizacion === null || Number(cotizacion) <= 0) {
+      return res.status(400).json({ error: "La cotización es obligatoria y debe ser > 0" });
     }
 
-    // usuario_id desde token (igual que estadías)
+    // para tipos que impactan propietario, exigir propietario_id
+    const requiereProp = ["Prop", "Limp", "Rece", "Publ"].includes(String(cod_tipo));
+    if (requiereProp && !propietario_id) {
+      return res.status(400).json({ error: "propietario_id es requerido para este tipo" });
+    }
+
+    // usuario desde token
     let usuarioId = null;
     try {
-      const token = req.token;
-      if (token) {
-        const payload = jwt.verify(token, JWT_SECRET);
+      if (req.token) {
+        const payload = jwt.verify(req.token, JWT_SECRET);
         usuarioId = payload.uid || null;
       }
     } catch {}
 
-    const sql = `
-      INSERT INTO movimientos (
-        cod_tipo, importe_ars, importe_usd, cotizacion, concepto, fecha, usuario_id
-      )
-      VALUES ($1, $2, $3, $4, $5, COALESCE($6, CURRENT_DATE), $7)
-      RETURNING id, cod_tipo, importe_ars, importe_usd, cotizacion, concepto, fecha, usuario_id
-    `;
-    const values = [
-      cod_tipo,
-      (importe_ars ?? null),
-      (importe_usd ?? null),
-      Number(cotizacion),
-      concepto,
-      fecha,
-      usuarioId
-    ];
-
-    const r = await pool.query(sql, values);
+    const r = await pool.query(
+      `INSERT INTO movimientos
+         (cod_tipo, importe_ars, importe_usd, cotizacion, concepto, fecha, usuario_id, propietario_id)
+       VALUES ($1,$2,$3,$4,$5,COALESCE($6, CURRENT_DATE),$7,$8)
+       RETURNING *`,
+      [cod_tipo, importe_ars, importe_usd, cotizacion, concepto, fecha, usuarioId, propietario_id]
+    );
     const row = r.rows[0];
     res.status(201).json({ ...row, fecha: formatDateISO(row.fecha) });
-  } catch (err) {
-    console.error("Error en POST /movimientos:", err.message);
-    res.status(500).json({ error: "Error al crear movimiento" });
+  } catch (e) {
+    console.error("POST /movimientos:", e.message);
+    res.status(500).json({ error: "Error creando movimiento" });
   }
 });
 
@@ -663,34 +650,37 @@ app.post("/movimientos", authMiddleware, requireAuth, async (req, res) => {
 app.put("/movimientos/:id", authMiddleware, requireAuth, async (req, res) => {
   try {
     const { id } = req.params;
-    const body = req.body || {};
+    const b = req.body || {};
+
+    if (Object.prototype.hasOwnProperty.call(b, "cotizacion")) {
+      if (Number(b.cotizacion) <= 0) return res.status(400).json({ error: "cotizacion debe ser > 0" });
+    }
+
+    // si cod_tipo es de los que requieren propietario, exigirlo
+    if (b.cod_tipo && ["Prop","Limp","Rece","Publ"].includes(String(b.cod_tipo))) {
+      if (!b.propietario_id) return res.status(400).json({ error: "propietario_id es requerido para este tipo" });
+    }
 
     const fields = [];
     const params = [];
     let i = 1;
-    const setField = (col, val) => { fields.push(`${col} = $${i++}`); params.push(val); };
+    const setF = (col, val) => { fields.push(`${col}=$${i++}`); params.push(val); };
 
-    // validaciones básicas
-    if (Object.prototype.hasOwnProperty.call(body, "cotizacion")) {
-      if (Number(body.cotizacion) <= 0) return res.status(400).json({ error: "cotizacion debe ser > 0" });
+    const updatable = ["cod_tipo","importe_ars","importe_usd","cotizacion","concepto","fecha","propietario_id"];
+    for (const k of updatable) {
+      if (Object.prototype.hasOwnProperty.call(b, k)) setF(k, b[k]);
     }
+    if (!fields.length) return res.status(400).json({ error: "Nada para actualizar" });
 
-    const updatable = ["cod_tipo", "importe_ars", "importe_usd", "cotizacion", "concepto", "fecha"];
-    for (const col of updatable) {
-      if (Object.prototype.hasOwnProperty.call(body, col)) setField(col, body[col]);
-    }
-    if (fields.length === 0) return res.status(400).json({ error: "Nada para actualizar" });
-
-    const sql = `UPDATE movimientos SET ${fields.join(", ")} WHERE id = $${i} RETURNING *`;
+    const sql = `UPDATE movimientos SET ${fields.join(", ")} WHERE id=$${i} RETURNING *`;
     params.push(id);
-
     const r = await pool.query(sql, params);
     if (r.rowCount === 0) return res.status(404).json({ error: "No encontrado" });
     const row = r.rows[0];
     res.json({ ...row, fecha: formatDateISO(row.fecha) });
-  } catch (err) {
-    console.error("Error en PUT /movimientos/:id:", err.message);
-    res.status(500).json({ error: "Error al actualizar movimiento" });
+  } catch (e) {
+    console.error("PUT /movimientos/:id:", e.message);
+    res.status(500).json({ error: "Error actualizando movimiento" });
   }
 });
 
@@ -942,20 +932,133 @@ app.delete("/estadias/:id", authMiddleware, requireAuth, async (req, res) => {
 });
 
 // ========================
+// EXPORTS A EXCEL
+// ========================
+
+// helpers: agrega una hoja al workbook con datos tabulares
+async function addSheetFromQuery(workbook, sheetName, rows) {
+  const ws = workbook.addWorksheet(sheetName);
+  if (!rows || rows.length === 0) {
+    ws.addRow(['(sin datos)']);
+    return;
+  }
+  // encabezados
+  const headers = Object.keys(rows[0]);
+  ws.addRow(headers);
+  // filas
+  for (const r of rows) {
+    const vals = headers.map(h => {
+      const v = r[h];
+      if (v instanceof Date) return v.toISOString();
+      if (v === null || v === undefined) return '';
+      return String(v);
+    });
+    ws.addRow(vals);
+  }
+}
+
+// GET /export/excel-all → una hoja por tabla principal
+app.get('/export/excel-all', authMiddleware, requireAuth, async (_req, res) => {
+  try {
+    const workbook = new ExcelJS.Workbook();
+
+    // Listado fijo de tablas (evitamos SQL injection)
+    const tables = [
+      'usuarios','estados','tipos','propietarios','departamentos','cocheras',
+      'estadias','movimientos','observaciones'
+    ];
+
+    for (const t of tables) {
+      // orden básico por primera columna "id" si existe
+      let q = `SELECT * FROM ${t}`;
+      if (['usuarios','propietarios','departamentos','cocheras','estadias','movimientos','observaciones'].includes(t)) {
+        q += ' ORDER BY id ASC';
+      } else if (['estados','tipos'].includes(t)) {
+        q += ' ORDER BY id ASC';
+      }
+      const r = await pool.query(q);
+      await addSheetFromQuery(workbook, t, r.rows);
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition','attachment; filename="bd_completa.xlsx"');
+    res.send(Buffer.from(buffer));
+  } catch (e) {
+    console.error('Error /export/excel-all:', e);
+    res.status(500).json({ error: 'No se pudo generar el Excel' });
+  }
+});
+
+// GET /export/estadias?scope=activas|cerradas|no-cerradas
+app.get('/export/estadias', authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const scope = String(req.query.scope || '').toLowerCase();
+    let where = '';
+    if (scope === 'cerradas') {
+      where = "WHERE e.estado_id = 'Cerr'";
+    } else if (scope === 'no-cerradas') {
+      where = "WHERE COALESCE(e.estado_id,'') <> 'Cerr'";
+    } else if (scope === 'activas') {
+      where = "WHERE e.fecha_hasta >= CURRENT_DATE";
+    } // si no matchea, exporta todas
+
+    const q = `
+      SELECT e.*,
+             d.codigo AS departamento_codigo,
+             c.codigo AS cochera_codigo
+      FROM estadias e
+      JOIN departamentos d ON d.id = e.departamento_id
+      LEFT JOIN cocheras c ON c.id = e.cochera_id
+      ${where}
+      ORDER BY e.id ASC`;
+    const r = await pool.query(q);
+
+    const workbook = new ExcelJS.Workbook();
+    await addSheetFromQuery(workbook, `estadias_${scope || 'todas'}`, r.rows);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition',`attachment; filename="estadias_${scope || 'todas'}.xlsx"`);
+    res.send(Buffer.from(buffer));
+  } catch (e) {
+    console.error('Error /export/estadias:', e);
+    res.status(500).json({ error: 'No se pudo generar el Excel' });
+  }
+});
+
+// ========================
 // Arranque controlado
 // ========================
+
+async function ensureDbPatches() {
+  // 1) columna propietario_id en movimientos
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='movimientos' AND column_name='propietario_id'
+      ) THEN
+        ALTER TABLE movimientos
+          ADD COLUMN propietario_id INT REFERENCES propietarios(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_mov_prop ON movimientos(propietario_id);
+      END IF;
+    END$$;
+  `);
+  console.log("✔ ensureDbPatches OK");
+}
+
 async function start() {
   if (process.env.RECREATE_SCHEMA_ON_BOOT === "true") {
-    console.log("⚠ RECREATE_SCHEMA_ON_BOOT=true → recreando BD...");
+    console.log("⚠ RECREATE_SCHEMA_ON_BOOT=true → recreando BD.");
     await recreateSchema();
   } else {
     console.log("ℹ RECREATE_SCHEMA_ON_BOOT no está en 'true' → no se toca el esquema.");
   }
+  await ensureDbPatches(); // <-- NUEVO
+
   app.listen(PORT, () => {
     console.log(`Servidor backend corriendo en http://localhost:${PORT}`);
   });
 }
-start().catch((e) => {
-  console.error("❌ Falló el arranque:", e);
-  process.exit(1);
-});

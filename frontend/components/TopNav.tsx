@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import useMe from '@/hooks/useMe'; // <- ahora apunta al AuthContext real
+import useMe from '@/hooks/useMe';
 
 export default function TopNav() {
   const { me, logout } = useMe();
@@ -24,8 +24,8 @@ export default function TopNav() {
   const estadiaActive = pathname.startsWith('/estadia');
 
   function handleLogout() {
-    logout();           // limpia cookie y estado
-    router.push('/login'); // redirección inmediata al login
+    logout();
+    router.push('/login');
   }
 
   return (
@@ -36,6 +36,8 @@ export default function TopNav() {
           <nav className="hidden sm:flex items-center gap-2">
             <LinkItem href="/calendar" label="Calendario" />
             <LinkItem href="/estadia/new" label="Estadías" isActive={estadiaActive} />
+            <LinkItem href="/movimientos" label="Movimientos" /> {/* <-- NUEVO */}
+            <LinkItem href="/informes" label="Informes" />
             {me?.rol === 'programador' && <LinkItem href="/users" label="Usuarios" />}
           </nav>
         </div>
