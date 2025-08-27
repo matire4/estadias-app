@@ -7,6 +7,8 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const ExcelJS = require('exceljs');
 
+
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -934,8 +936,6 @@ app.delete("/estadias/:id", authMiddleware, requireAuth, async (req, res) => {
 // ========================
 // EXPORTACIONES A EXCEL
 // ========================
-const ExcelJS = require("exceljs");
-
 // GET /export/excel-all  → una hoja por tabla
 app.get("/export/excel-all", async (req, res) => {
   const user = verifyTokenOr401(req, res);
